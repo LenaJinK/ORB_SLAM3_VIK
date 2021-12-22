@@ -28,6 +28,7 @@
 #include "Frame.h"
 #include "KeyFrameDatabase.h"
 #include "ImuTypes.h"
+#include "forward_kinematics.h"
 
 #include "GeometricCamera.h"
 #include "SerializationUtils.h"
@@ -49,6 +50,11 @@ class KeyFrameDatabase;
 
 class GeometricCamera;
 
+
+/** KeyFrame
+ * 关键帧，和普通的Frame不一样，但是可以由Frame来构造
+ * 许多数据会被三个线程同时访问，所以用锁的地方很普遍
+ * */
 class KeyFrame
 {
     friend class boost::serialization::access;
@@ -184,12 +190,15 @@ class KeyFrame
         ar & mImuBias;
         ar & mBackupImuPreintegrated;
         ar & mImuCalib;
+
         ar & mBackupPrevKFId;
         ar & mBackupNextKFId;
         ar & bImu;
         ar & boost::serialization::make_array(mVw.data(), mVw.size());
         ar & boost::serialization::make_array(mOwb.data(), mOwb.size());
         ar & mbHasVelocity;
+
+        ar & mJointCalib;  // todo
     }
 
 public:
@@ -198,6 +207,7 @@ public:
     KeyFrame(Frame &F, Map* pMap, KeyFrameDatabase* pKFDB);
 
     // Pose functions
+    // 用于更新关键帧的位姿。这里的set、get都需要用到锁
     void SetPose(const Sophus::SE3f &Tcw);
     void SetVelocity(const Eigen::Vector3f &Vw_);
 
@@ -208,6 +218,8 @@ public:
 
     Eigen::Vector3f GetImuPosition();
     Eigen::Matrix3f GetImuRotation();
+    Eigen::Vector3f GetCoMPosition();
+    Eigen::Matrix3f GetCoMRotation();
     Sophus::SE3f GetImuPose();
     Eigen::Matrix3f GetRotation();
     Eigen::Vector3f GetTranslation();
@@ -308,9 +320,10 @@ public:
     // The following variables are accesed from only 1 thread or never change (no mutex needed).
 public:
 
-    static long unsigned int nNextId;
-    long unsigned int mnId;
-    const long unsigned int mnFrameId;
+    static long unsigned int nNextId;  ///< 改为nLastID更合适，表示上一个关键帧的ID号
+    long unsigned int mnId;   ///< 在nNextID的基础上加1就得到了mnID，为当前关键帧的ID号
+    const long unsigned int mnFrameId;  ///< 每个关键帧基本属性是它是一个Frame，关键帧初始化的时候需要Frame，mnFrameId记录了该关键帧是由哪个Frame初始化的
+    bool FirstBA2Finished;  ///< 判断是否完成了第二次BA，也就是全部的IMU初始化
 
     const double mTimeStamp;
 
@@ -325,8 +338,8 @@ public:
     long unsigned int mnFuseTargetForKF;
 
     // Variables used by the local mapping
-    long unsigned int mnBALocalForKF;
-    long unsigned int mnBAFixedForKF;
+    long unsigned int mnBALocalForKF;  ///< 记录局部优化id，该数为不断变化，数值等于局部化的关键帧的id
+    long unsigned int mnBAFixedForKF;  ///< 同上，只是不优化的关键帧
 
     //Number of optimizations by BA(amount of iterations in BA)
     long unsigned int mnNumberOfOpt;
@@ -395,8 +408,8 @@ public:
     const int mnScaleLevels;
     const float mfScaleFactor;
     const float mfLogScaleFactor;
-    const std::vector<float> mvScaleFactors;
-    const std::vector<float> mvLevelSigma2;
+    const std::vector<float> mvScaleFactors;    ///< 每一层的尺度因子，scale^n，scale=1.2，n为层数
+    const std::vector<float> mvLevelSigma2;     ///< 尺度因子的平方
     const std::vector<float> mvInvLevelSigma2;
 
     // Image bounds and calibration
@@ -411,6 +424,7 @@ public:
 
     IMU::Preintegrated* mpImuPreintegrated;
     IMU::Calib mImuCalib;
+    Joint::Calib mJointCalib;
 
     unsigned int mnOriginMapId;
 
@@ -438,6 +452,9 @@ protected:
     Eigen::Vector3f mVw;
     bool mbHasVelocity;
 
+    Eigen::Vector3f mtwcom;   ///< 质心在世界坐标系下的位置
+    Eigen::Matrix3f mRwcom;   ///< 质心在世界坐标系下的旋转矩阵
+
     //Transformation matrix between cameras in stereo fisheye
     Sophus::SE3<float> mTlr;
     Sophus::SE3<float> mTrl;
@@ -457,13 +474,14 @@ protected:
     // Grid over the image to speed up feature matching
     std::vector< std::vector <std::vector<size_t> > > mGrid;
 
-    std::map<KeyFrame*,int> mConnectedKeyFrameWeights;
-    std::vector<KeyFrame*> mvpOrderedConnectedKeyFrames;
-    std::vector<int> mvOrderedWeights;
+    std::map<KeyFrame*,int> mConnectedKeyFrameWeights;    ///< 与该关键帧连接的关键帧与权重
+    std::vector<KeyFrame*> mvpOrderedConnectedKeyFrames;   ///< 排序后的关键帧
+    std::vector<int> mvOrderedWeights;  ///< 排序后的权重(从大到小)
     // For save relation without pointer, this is necessary for save/load function
     std::map<long unsigned int, int> mBackupConnectedKeyFrameIdWeights;
 
     // Spanning Tree and Loop Edges
+    // std::set是集合，相比vector，进行插入数据这样的操作时会自动排序
     bool mbFirstConnection;
     KeyFrame* mpParent;
     std::set<KeyFrame*> mspChildrens;

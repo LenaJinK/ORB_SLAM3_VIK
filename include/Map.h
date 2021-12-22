@@ -88,6 +88,7 @@ public:
     long unsigned int MapPointsInMap();
     long unsigned  KeyFramesInMap();
 
+
     long unsigned int GetId();
 
     long unsigned int GetInitKFid();
@@ -159,12 +160,12 @@ protected:
 
     long unsigned int mnId;
 
-    std::set<MapPoint*> mspMapPoints;
-    std::set<KeyFrame*> mspKeyFrames;
+    std::set<MapPoint*> mspMapPoints;    // notice 存储地图点的set
+    std::set<KeyFrame*> mspKeyFrames;   // notice 存储关键帧的set
 
     // Save/load, the set structure is broken in libboost 1.58 for ubuntu 16.04, a vector is serializated
-    std::vector<MapPoint*> mvpBackupMapPoints;
-    std::vector<KeyFrame*> mvpBackupKeyFrames;
+    std::vector<MapPoint*> mvpBackupMapPoints;  // notice 存储地图点的vector
+    std::vector<KeyFrame*> mvpBackupKeyFrames;      // notice 存储关键帧的vector
 
     KeyFrame* mpKFinitial;
     KeyFrame* mpKFlowerID;
@@ -194,12 +195,13 @@ protected:
     bool mHasTumbnail;
     bool mbBad = false;
 
-    bool mbIsInertial;
+    bool mbIsInertial;   //
     bool mbIMU_BA1;
     bool mbIMU_BA2;
 
     // Mutex
     std::mutex mMutexMap;
+//    bool mbMapUpdated;     // todo new mappublisher类 里面的一个变量
 
 };
 

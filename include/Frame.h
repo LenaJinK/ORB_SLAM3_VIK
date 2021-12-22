@@ -25,10 +25,12 @@
 #include "Thirdparty/DBoW2/DBoW2/BowVector.h"
 #include "Thirdparty/DBoW2/DBoW2/FeatureVector.h"
 
-#include "Thirdparty/Sophus/sophus/geometry.hpp"
+//#include "Thirdparty/Sophus/sophus/geometry.hpp"
+#include "sophus/geometry.hpp"
 
 #include "ImuTypes.h"
 #include "ORBVocabulary.h"
+#include "forward_kinematics.h"
 
 #include "Converter.h"
 #include "Settings.h"
@@ -62,7 +64,9 @@ public:
     Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera,Frame* pPrevF = static_cast<Frame*>(NULL), const IMU::Calib &ImuCalib = IMU::Calib());
 
     // Constructor for RGB-D cameras.
-    Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera,Frame* pPrevF = static_cast<Frame*>(NULL), const IMU::Calib &ImuCalib = IMU::Calib());
+    Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera,Frame* pPrevF = static_cast<Frame*>(NULL),const IMU::Calib &ImuCalib = IMU::Calib());//todo
+    // todu RGBD-IMU-Kinematic
+    Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera,Frame* pPrevF = static_cast<Frame*>(NULL), const IMU::Calib &ImuCalib = IMU::Calib(),const Joint::Calib &JointCalib = Joint::Calib());//todo
 
     // Constructor for Monocular cameras.
     Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, GeometricCamera* pCamera, cv::Mat &distCoef, const float &bf, const float &thDepth, Frame* pPrevF = static_cast<Frame*>(NULL), const IMU::Calib &ImuCalib = IMU::Calib());
@@ -90,6 +94,10 @@ public:
     Eigen::Matrix<float,3,1> GetImuPosition() const;
     Eigen::Matrix<float,3,3> GetImuRotation();
     Sophus::SE3<float> GetImuPose();
+
+    Eigen::Matrix<float,3,1> GetCoMPosition() const;   // todo CoM pose
+    Eigen::Matrix<float,3,3> GetCoMRotation();
+    Sophus::SE3<float> GetCoMPose();
 
     Sophus::SE3f GetRelativePoseTrl();
     Sophus::SE3f GetRelativePoseTlr();
@@ -125,6 +133,9 @@ public:
 
     bool imuIsPreintegrated();
     void setIntegrated();
+
+    bool JointIsCalculated();  //todo
+    void setCalculated();
 
     bool isSet() const;
 
@@ -166,7 +177,7 @@ public:
 
 private:
     //Sophus/Eigen migration
-    Sophus::SE3<float> mTcw;
+    Sophus::SE3<float> mTcw;        ///< 相继姿态 世界坐标系到相继坐标系的变换矩阵
     Eigen::Matrix<float,3,3> mRwc;
     Eigen::Matrix<float,3,1> mOw;
     Eigen::Matrix<float,3,3> mRcw;
@@ -225,6 +236,9 @@ public:
     // Vector of keypoints (original for visualization) and undistorted (actually used by the system).
     // In the stereo case, mvKeysUn is redundant as images must be rectified.
     // In the RGB-D case, RGB images can be distorted.
+    // mvKeys:原始左图像提取出的特征点（未校正）
+    // mvKeysRight:原始右图像提取出的特征点（未校正）
+    // mvKeysUn:校正mvKeys后的特征点，对于双目摄像头，一般得到的图像都是校正好的，再校正一次有点多余
     std::vector<cv::KeyPoint> mvKeys, mvKeysRight;
     std::vector<cv::KeyPoint> mvKeysUn;
 
@@ -247,8 +261,10 @@ public:
     int mnCloseMPs;
 
     // Keypoints are assigned to cells in a grid to reduce matching complexity when projecting MapPoints.
+    // 坐标 乘以 下面两个量 就可以确定在哪个格子
     static float mfGridElementWidthInv;
     static float mfGridElementHeightInv;
+    // 每个格子分配到的特征点数，将图像分成格子，保证提取的特征点比较均匀  cols 64  rows 48
     std::vector<std::size_t> mGrid[FRAME_GRID_COLS][FRAME_GRID_ROWS];
 
     IMU::Bias mPredBias;
@@ -259,24 +275,28 @@ public:
     // Imu calibration
     IMU::Calib mImuCalib;
 
+    Joint::Calib mJointCalib;
+
     // Imu preintegration from last keyframe
-    IMU::Preintegrated* mpImuPreintegrated;
+    IMU::Preintegrated* mpImuPreintegrated; //上一关键帧到当前帧的预积分
+    Joint::ForwardKinematics* mpJointCalculated;
     KeyFrame* mpLastKeyFrame;
 
     // Pointer to previous frame
     Frame* mpPrevFrame;
     IMU::Preintegrated* mpImuPreintegratedFrame;
+    Joint::ForwardKinematics* mpJointCalculatedFrame;
 
     // Current and Next Frame id.
     static long unsigned int nNextId;
-    long unsigned int mnId;
+    long unsigned int mnId;      ///< Current Frame id.
 
     // Reference Keyframe.
     KeyFrame* mpReferenceKF;
 
     // Scale pyramid info.
-    int mnScaleLevels;
-    float mfScaleFactor;
+    int mnScaleLevels;     ///< 图像提金字塔的层数
+    float mfScaleFactor;   ///< 图像提金字塔的尺度因子
     float mfLogScaleFactor;
     vector<float> mvScaleFactors;
     vector<float> mvInvScaleFactors;
@@ -284,6 +304,7 @@ public:
     vector<float> mvInvLevelSigma2;
 
     // Undistorted Image Bounds (computed once).
+    // 用于确定画格子时的边界
     static float mnMinX;
     static float mnMaxX;
     static float mnMinY;
@@ -322,6 +343,10 @@ private:
 
     std::mutex *mpMutexImu;
 
+    bool mbJointCalculated;  //todo
+
+    std::mutex *mpMutexJoint;
+
 public:
     GeometricCamera* mpCamera, *mpCamera2;
 
@@ -338,7 +363,7 @@ public:
 
     //Triangulated stereo observations using as reference the left camera. These are
     //computed during ComputeStereoFishEyeMatches
-    std::vector<Eigen::Vector3f> mvStereo3Dpoints;
+    std::vector<Eigen::Vector3f,Eigen::aligned_allocator<Eigen::Vector3f>> mvStereo3Dpoints;
 
     //Grid for the right image
     std::vector<std::size_t> mGridRight[FRAME_GRID_COLS][FRAME_GRID_ROWS];

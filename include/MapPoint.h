@@ -161,10 +161,10 @@ public:
     void PostLoad(map<long unsigned int, KeyFrame*>& mpKFid, map<long unsigned int, MapPoint*>& mpMPid);
 
 public:
-    long unsigned int mnId;
+    long unsigned int mnId;    ///< Global ID for MapPoint
     static long unsigned int nNextId;
-    long int mnFirstKFid;
-    long int mnFirstFrame;
+    long int mnFirstKFid;     ///< 创建该MapPoint的关键帧ID
+    long int mnFirstFrame;    ///< 创建该MapPoint的帧ID（即每一关键帧有一个帧ID）
     int nObs;
 
     // Variables used by the tracking
@@ -210,19 +210,22 @@ public:
 protected:    
 
      // Position in absolute coordinates
-     Eigen::Vector3f mWorldPos;
+     Eigen::Vector3f mWorldPos;   ///< MapPoint在世界坐标系下的坐标
 
      // Keyframes observing the point and associated index in keyframe
-     std::map<KeyFrame*,std::tuple<int,int> > mObservations;
+     std::map<KeyFrame*,std::tuple<int,int> > mObservations;  ///< 观测到该MapPoint的KF和该MapPoint在KF中的索引
      // For save relation without pointer, this is necessary for save/load function
      std::map<long unsigned int, int> mBackupObservationsId1;
      std::map<long unsigned int, int> mBackupObservationsId2;
 
      // Mean viewing direction
-     Eigen::Vector3f mNormalVector;
+     Eigen::Vector3f mNormalVector;///< 该MapPoint平均观测方向
 
      // Best descriptor to fast matching
-     cv::Mat mDescriptor;
+     // 每个3D点也有一个descriptor
+     // 如果MapPoint与很多帧图像特征点对应（由keyframe来构造时），那么距离其它描述子的平均距离最小的描述子是最佳描述子
+     // MapPoint只与一帧的图像特征点对应（由frame来构造时），那么这个特征点的描述子就是该3D点的描述子
+     cv::Mat mDescriptor;  ///< 通过 ComputeDistinctiveDescriptors()得到的最优描述子
 
      // Reference KeyFrame
      KeyFrame* mpRefKF;

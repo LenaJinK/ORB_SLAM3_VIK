@@ -19,7 +19,7 @@
 #include "OptimizableTypes.h"
 
 namespace ORB_SLAM3 {
-    bool EdgeSE3ProjectXYZOnlyPose::read(std::istream& is){
+    bool EdgeSE3ProjectXYZOnlyPose::read(std::istream& is){  // 重投影误差边
         for (int i=0; i<2; i++){
             is >> _measurement[i];
         }

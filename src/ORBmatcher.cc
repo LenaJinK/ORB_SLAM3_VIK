@@ -219,13 +219,19 @@ namespace ORB_SLAM3
         else
             return 4.0;
     }
-
+/**
+ * @brief 通过词袋匹配关键帧和当前普通帧的特征点
+ * @param[in] pKF               关键帧
+ * @param[in] F                 当前普通帧
+ * @param[in] vpMapPointMatches F中地图点对应的匹配，NULL表示未匹配
+ * @return int                  成功匹配的数量
+*/
     int ORBmatcher::SearchByBoW(KeyFrame* pKF,Frame &F, vector<MapPoint*> &vpMapPointMatches)
     {
         const vector<MapPoint*> vpMapPointsKF = pKF->GetMapPointMatches();
 
         vpMapPointMatches = vector<MapPoint*>(F.N,static_cast<MapPoint*>(NULL));
-
+        // 取出关键帧的词袋特征向量
         const DBoW2::FeatureVector &vFeatVecKF = pKF->mFeatVec;
 
         int nmatches=0;
@@ -233,7 +239,10 @@ namespace ORB_SLAM3
         vector<int> rotHist[HISTO_LENGTH];
         for(int i=0;i<HISTO_LENGTH;i++)
             rotHist[i].reserve(500);
-        const float factor = 1.0f/HISTO_LENGTH;
+
+        // 将0~360的数转换到0~HISTO_LENGTH的系数
+        //! 原作者代码是 const float factor = 1.0f/HISTO_LENGTH; 是错误的，更改为下面代码  
+        const float factor = HISTO_LENGTH/360.0f;
 
         // We perform the matching over ORB that belong to the same vocabulary node (at a certain level)
         DBoW2::FeatureVector::const_iterator KFit = vFeatVecKF.begin();
@@ -243,11 +252,13 @@ namespace ORB_SLAM3
 
         while(KFit != KFend && Fit != Fend)
         {
+            // Step 1：分别取出属于同一node的ORB特征点(只有属于同一node，才有可能是匹配点)
             if(KFit->first == Fit->first)
             {
+                // second 是该node内存储的feature index
                 const vector<unsigned int> vIndicesKF = KFit->second;
                 const vector<unsigned int> vIndicesF = Fit->second;
-
+                 // Step 2：遍历KF中属于该node的特征点
                 for(size_t iKF=0; iKF<vIndicesKF.size(); iKF++)
                 {
                     const unsigned int realIdxKF = vIndicesKF[iKF];
@@ -269,13 +280,13 @@ namespace ORB_SLAM3
                     int bestDist1R=256;
                     int bestIdxFR =-1 ;
                     int bestDist2R=256;
-
+                    // Step 3：遍历F中属于该node的特征点，寻找最佳匹配点
                     for(size_t iF=0; iF<vIndicesF.size(); iF++)
                     {
                         if(F.Nleft == -1){
-                            const unsigned int realIdxF = vIndicesF[iF];
+                            const unsigned int realIdxF = vIndicesF[iF]; // 这里的realIdxF是指普通帧该节点中特征点的索引
 
-                            if(vpMapPointMatches[realIdxF])
+                            if(vpMapPointMatches[realIdxF])// 如果地图点存在，说明这个点已经被匹配过了，不再匹配，加快速度
                                 continue;
 
                             const cv::Mat &dF = F.mDescriptors.row(realIdxF);
@@ -323,7 +334,7 @@ namespace ORB_SLAM3
                         }
 
                     }
-
+                    // Step 4：根据阈值 和 角度投票剔除误匹配  1.阈值 2.最次比 3. 记录成功匹配特征点对应的地图点（来自关键帧）4.计算旋转直方图
                     if(bestDist1<=TH_LOW)
                     {
                         if(static_cast<float>(bestDist1)<mfNNratio*static_cast<float>(bestDist2))
@@ -353,12 +364,12 @@ namespace ORB_SLAM3
                             }
                             nmatches++;
                         }
-
+                         
                         if(bestDist1R<=TH_LOW)
                         {
                             if(static_cast<float>(bestDist1R)<mfNNratio*static_cast<float>(bestDist2R) || true)
                             {
-                                vpMapPointMatches[bestIdxFR]=pMP;
+                                vpMapPointMatches[bestIdxFR]=pMP; 
 
                                 const cv::KeyPoint &kp =
                                         (!pKF->mpCamera2) ? pKF->mvKeysUn[realIdxKF] :
@@ -400,7 +411,7 @@ namespace ORB_SLAM3
                 Fit = F.mFeatVec.lower_bound(KFit->first);
             }
         }
-
+        // Step 5 根据方向剔除误匹配的点
         if(mbCheckOrientation)
         {
             int ind1=-1;
@@ -645,15 +656,20 @@ namespace ORB_SLAM3
         return nmatches;
     }
 
+/**
+ * @brief 单目初始化中 用于参考真和当前真的特征点匹配
+ * @param vbPrevMatched[in] 匹配好的当前帧的特征点坐标
+ * */
     int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f> &vbPrevMatched, vector<int> &vnMatches12, int windowSize)
     {
         int nmatches=0;
         vnMatches12 = vector<int>(F1.mvKeysUn.size(),-1);
-
+        // step 1 构建旋转直方图, HISTO_LENGTH = 30
         vector<int> rotHist[HISTO_LENGTH];
         for(int i=0;i<HISTO_LENGTH;i++)
-            rotHist[i].reserve(500);
-        const float factor = 1.0f/HISTO_LENGTH;
+            rotHist[i].reserve(500);   //每个区间预分配500个点
+//        const float factor = 1.0f/HISTO_LENGTH;// todo 源代码
+        const float factor = HISTO_LENGTH/360.0f;  // 小六提出的修正
 
         vector<int> vMatchedDistance(F2.mvKeysUn.size(),INT_MAX);
         vector<int> vnMatches21(F2.mvKeysUn.size(),-1);
@@ -663,19 +679,20 @@ namespace ORB_SLAM3
             cv::KeyPoint kp1 = F1.mvKeysUn[i1];
             int level1 = kp1.octave;
             if(level1>0)
-                continue;
-
+                continue;  // 只是用第0曾的图像
+            //Step 2 在半径窗口内搜索当前帧F2中所有的候选匹配特征点
             vector<size_t> vIndices2 = F2.GetFeaturesInArea(vbPrevMatched[i1].x,vbPrevMatched[i1].y, windowSize,level1,level1);
 
             if(vIndices2.empty())
                 continue;
 
-            cv::Mat d1 = F1.mDescriptors.row(i1);
+            cv::Mat d1 = F1.mDescriptors.row(i1);  // 取出参考帧F1中当前遍历特征点对应的描述子
 
             int bestDist = INT_MAX;
             int bestDist2 = INT_MAX;
-            int bestIdx2 = -1;
+            int bestIdx2 = -1;     //最佳候选特征点在F2中的index
 
+            // Step 3 遍历搜索搜索窗口中的所有潜在的匹配候选点，找到最优的和次优的
             for(vector<size_t>::iterator vit=vIndices2.begin(); vit!=vIndices2.end(); vit++)
             {
                 size_t i2 = *vit;
@@ -686,7 +703,7 @@ namespace ORB_SLAM3
 
                 if(vMatchedDistance[i2]<=dist)
                     continue;
-
+                // 如果当前匹配距离更小，更新最佳次佳距离
                 if(dist<bestDist)
                 {
                     bestDist2=bestDist;
@@ -698,7 +715,7 @@ namespace ORB_SLAM3
                     bestDist2=dist;
                 }
             }
-
+            // Step 4 对最优次优结果进行检查，满足阈值、最优/次优比例，删除重复匹配
             if(bestDist<=TH_LOW)
             {
                 if(bestDist<(float)bestDist2*mfNNratio)
@@ -708,16 +725,20 @@ namespace ORB_SLAM3
                         vnMatches12[vnMatches21[bestIdx2]]=-1;
                         nmatches--;
                     }
+                    // 最优的匹配关系，双向建立
+                    // vnMatches12保存参考帧F1和F2匹配关系，index保存是F1对应特征点索引，值保存的是匹配好的F2特征点索引
                     vnMatches12[i1]=bestIdx2;
                     vnMatches21[bestIdx2]=i1;
                     vMatchedDistance[bestIdx2]=bestDist;
                     nmatches++;
-
+                    // Step 5 计算匹配点旋转角度差所在的直方图
                     if(mbCheckOrientation)
                     {
                         float rot = F1.mvKeysUn[i1].angle-F2.mvKeysUn[bestIdx2].angle;
                         if(rot<0.0)
                             rot+=360.0f;
+                        // 前面factor = HISTO_LENGTH/360.0f
+                        // bin = rot / 360.of * HISTO_LENGTH 表示当前rot被分配在第几个直方图bin
                         int bin = round(rot*factor);
                         if(bin==HISTO_LENGTH)
                             bin=0;

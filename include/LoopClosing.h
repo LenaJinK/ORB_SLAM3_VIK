@@ -32,6 +32,9 @@
 #include <thread>
 #include <mutex>
 #include "Thirdparty/g2o/g2o/types/types_seven_dof_expmap.h"
+#include "pointcloudmapping.h"
+
+class PointCloudMapping;  // todo new
 
 namespace ORB_SLAM3
 {
@@ -52,7 +55,7 @@ public:
 
 public:
 
-    LoopClosing(Atlas* pAtlas, KeyFrameDatabase* pDB, ORBVocabulary* pVoc,const bool bFixScale, const bool bActiveLC);
+    LoopClosing(Atlas* pAtlas, KeyFrameDatabase* pDB, ORBVocabulary* pVoc,const bool bFixScale, const bool bActiveLC, shared_ptr<PointCloudMapping> pPointCloud);  // todo new
 
     void SetTracker(Tracking* pTracker);
 
@@ -83,6 +86,9 @@ public:
     bool isFinished();
 
     Viewer* mpViewer;
+
+    shared_ptr<PointCloudMapping>  mpPointCloudMapping;  // todo new
+    int loopcount = 0;  // todo new
 
 #ifdef REGISTER_TIMES
 

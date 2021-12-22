@@ -75,12 +75,15 @@ void Map::AddKeyFrame(KeyFrame *pKF)
     {
         mpKFlowerID = pKF;
     }
+//    mbMapUpdated=true;   // todo new 有新的关键帧加入，所以地图更新了
+
 }
 
 void Map::AddMapPoint(MapPoint *pMP)
 {
     unique_lock<mutex> lock(mMutexMap);
     mspMapPoints.insert(pMP);
+//    mbMapUpdated=true;  // todo new 有新的地图点加入，所以地图更新了
 }
 
 void Map::SetImuInitialized()
@@ -102,6 +105,8 @@ void Map::EraseMapPoint(MapPoint *pMP)
 
     // TODO: This only erase the pointer.
     // Delete the MapPoint
+
+//    mbMapUpdated=true;  // todo new 有地图点被删除，所以地图更新了
 }
 
 void Map::EraseKeyFrame(KeyFrame *pKF)
@@ -124,12 +129,15 @@ void Map::EraseKeyFrame(KeyFrame *pKF)
 
     // TODO: This only erase the pointer.
     // Delete the MapPoint
+
+//    mbMapUpdated=true; // todo new 有关键帧被删除，所以地图更新了
 }
 
 void Map::SetReferenceMapPoints(const vector<MapPoint *> &vpMPs)
 {
     unique_lock<mutex> lock(mMutexMap);
     mvpReferenceMapPoints = vpMPs;
+//    mbMapUpdated=true; // todo new 有参考地图点被设置，所以地图更新了
 }
 
 void Map::InformNewBigChange()
@@ -144,24 +152,27 @@ int Map::GetLastBigChangeIdx()
     return mnBigChangeIdx;
 }
 
+// 提取所有关键帧
 vector<KeyFrame*> Map::GetAllKeyFrames()
 {
     unique_lock<mutex> lock(mMutexMap);
     return vector<KeyFrame*>(mspKeyFrames.begin(),mspKeyFrames.end());
 }
 
+// 提取所有地图点
 vector<MapPoint*> Map::GetAllMapPoints()
 {
     unique_lock<mutex> lock(mMutexMap);
     return vector<MapPoint*>(mspMapPoints.begin(),mspMapPoints.end());
 }
 
+// 地图中的地图点
 long unsigned int Map::MapPointsInMap()
 {
     unique_lock<mutex> lock(mMutexMap);
     return mspMapPoints.size();
 }
-
+// 地图中的关键帧
 long unsigned int Map::KeyFramesInMap()
 {
     unique_lock<mutex> lock(mMutexMap);

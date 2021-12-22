@@ -32,7 +32,7 @@
 
 namespace ORB_SLAM3
 {
-
+// 定义并初始化静态成员变量，对于所有该类，这些变量都是共享的
 long unsigned int Frame::nNextId=0;
 bool Frame::mbInitialComputations=true;
 float Frame::cx, Frame::cy, Frame::fx, Frame::fy, Frame::invfx, Frame::invfy;
@@ -65,12 +65,12 @@ Frame::Frame(const Frame &frame)
      mfScaleFactor(frame.mfScaleFactor), mfLogScaleFactor(frame.mfLogScaleFactor),
      mvScaleFactors(frame.mvScaleFactors), mvInvScaleFactors(frame.mvInvScaleFactors), mNameFile(frame.mNameFile), mnDataset(frame.mnDataset),
      mvLevelSigma2(frame.mvLevelSigma2), mvInvLevelSigma2(frame.mvInvLevelSigma2), mpPrevFrame(frame.mpPrevFrame), mpLastKeyFrame(frame.mpLastKeyFrame),
-     mbIsSet(frame.mbIsSet), mbImuPreintegrated(frame.mbImuPreintegrated), mpMutexImu(frame.mpMutexImu),
+     mbIsSet(frame.mbIsSet), mbImuPreintegrated(frame.mbImuPreintegrated), mpMutexImu(frame.mpMutexImu),mpMutexJoint(frame.mpMutexJoint),
      mpCamera(frame.mpCamera), mpCamera2(frame.mpCamera2), Nleft(frame.Nleft), Nright(frame.Nright),
      monoLeft(frame.monoLeft), monoRight(frame.monoRight), mvLeftToRightMatch(frame.mvLeftToRightMatch),
      mvRightToLeftMatch(frame.mvRightToLeftMatch), mvStereo3Dpoints(frame.mvStereo3Dpoints),
      mTlr(frame.mTlr), mRlr(frame.mRlr), mtlr(frame.mtlr), mTrl(frame.mTrl),
-     mTcw(frame.mTcw), mbHasPose(false), mbHasVelocity(false)
+     mTcw(frame.mTcw), mbHasPose(false), mbHasVelocity(false),mJointCalib(frame.mJointCalib)
 {
     for(int i=0;i<FRAME_GRID_COLS;i++)
         for(int j=0; j<FRAME_GRID_ROWS; j++){
@@ -97,7 +97,7 @@ Frame::Frame(const Frame &frame)
 #endif
 }
 
-
+//shaungmu
 Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, Frame* pPrevF, const IMU::Calib &ImuCalib)
     :mpcpi(NULL), mpORBvocabulary(voc),mpORBextractorLeft(extractorLeft),mpORBextractorRight(extractorRight), mTimeStamp(timeStamp), mK(K.clone()), mK_(Converter::toMatrix3f(K)), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
      mImuCalib(ImuCalib), mpImuPreintegrated(NULL), mpPrevFrame(pPrevF),mpImuPreintegratedFrame(NULL), mpReferenceKF(static_cast<KeyFrame*>(NULL)), mbIsSet(false), mbImuPreintegrated(false),
@@ -184,24 +184,153 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
     }
 
     mpMutexImu = new std::mutex();
+    mpMutexJoint = new std::mutex();  // todo new modify
 
     //Set no stereo fisheye information
     Nleft = -1;
     Nright = -1;
     mvLeftToRightMatch = vector<int>(0);
     mvRightToLeftMatch = vector<int>(0);
-    mvStereo3Dpoints = vector<Eigen::Vector3f>(0);
+    mvStereo3Dpoints = vector<Eigen::Vector3f,Eigen::aligned_allocator<Eigen::Vector3f>>(0);
     monoLeft = -1;
     monoRight = -1;
 
     AssignFeaturesToGrid();
 }
-
+/**
+ * @ RGBD-IMU模式普通帧构造函数
+ * */
 Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera,Frame* pPrevF, const IMU::Calib &ImuCalib)
-    :mpcpi(NULL),mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
-     mTimeStamp(timeStamp), mK(K.clone()), mK_(Converter::toMatrix3f(K)),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
-     mImuCalib(ImuCalib), mpImuPreintegrated(NULL), mpPrevFrame(pPrevF), mpImuPreintegratedFrame(NULL), mpReferenceKF(static_cast<KeyFrame*>(NULL)), mbIsSet(false), mbImuPreintegrated(false),
-     mpCamera(pCamera),mpCamera2(nullptr), mbHasPose(false), mbHasVelocity(false)
+        :mpcpi(NULL),mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
+         mTimeStamp(timeStamp), mK(K.clone()), mK_(Converter::toMatrix3f(K)),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
+         mImuCalib(ImuCalib), mpImuPreintegrated(NULL), mpPrevFrame(pPrevF), mpImuPreintegratedFrame(NULL), mpReferenceKF(static_cast<KeyFrame*>(NULL)), mbIsSet(false), mbImuPreintegrated(false),
+         mpCamera(pCamera),mpCamera2(nullptr), mbHasPose(false), mbHasVelocity(false)
+{
+    // Frame ID
+    // Step 1 帧的ID 自增
+    mnId=nNextId++;
+
+    // Scale Level Info
+    // Step 2 计算图像金字塔的参数
+    // 获取图像金字塔的层数
+    mnScaleLevels = mpORBextractorLeft->GetLevels();
+    // 获得层与层之间的缩放比
+    mfScaleFactor = mpORBextractorLeft->GetScaleFactor();
+    // 计算上面缩放比的对数
+    mfLogScaleFactor = log(mfScaleFactor);
+    // 获取每层图像的缩放因子
+    mvScaleFactors = mpORBextractorLeft->GetScaleFactors();
+    // 同样获取每层图像缩放因子的倒数
+    mvInvScaleFactors = mpORBextractorLeft->GetInverseScaleFactors();
+    // 高斯模糊的时候，使用的方差
+    mvLevelSigma2 = mpORBextractorLeft->GetScaleSigmaSquares();
+    // 获取sigma^2的倒数
+    mvInvLevelSigma2 = mpORBextractorLeft->GetInverseScaleSigmaSquares();
+
+    // ORB extraction
+#ifdef REGISTER_TIMES
+    std::chrono::steady_clock::time_point time_StartExtORB = std::chrono::steady_clock::now();
+#endif
+    ExtractORB(0,imGray,0,0);
+#ifdef REGISTER_TIMES
+    std::chrono::steady_clock::time_point time_EndExtORB = std::chrono::steady_clock::now();
+
+mTimeORB_Ext = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(time_EndExtORB - time_StartExtORB).count();
+#endif
+
+    // 获取特征点的个数
+    N = mvKeys.size();
+
+    // 如果这一帧没有能够提取出特征点，那么就直接返回了
+    if(mvKeys.empty())
+        return;
+
+    // Step 4 用OpenCV的矫正函数、内参对提取到的特征点进行矫正
+    UndistortKeyPoints();
+
+    // Step 5 获取图像的深度，并且根据这个深度推算其右图中匹配的特征点的视差
+    ComputeStereoFromRGBD(imDepth);
+
+    // 初始化本帧的地图点
+    mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));
+
+    mmProjectPoints.clear();
+    mmMatchedInImage.clear();
+
+    // 记录地图点是否为外点，初始化均为外点false
+    mvbOutlier = vector<bool>(N,false);
+
+    // This is done only for the first Frame (or after a change in the calibration)
+    //  Step 5 计算去畸变后图像边界，将特征点分配到网格中。这个过程一般是在第一帧或者是相机标定参数发生变化之后进行
+    if(mbInitialComputations)
+    {
+        // 计算去畸变后图像的边界
+        ComputeImageBounds(imGray);
+
+        // 表示一个图像像素相当于多少个图像网格列（宽）
+        mfGridElementWidthInv=static_cast<float>(FRAME_GRID_COLS)/static_cast<float>(mnMaxX-mnMinX);
+        // 表示一个图像像素相当于多少个图像网格行（高）
+        mfGridElementHeightInv=static_cast<float>(FRAME_GRID_ROWS)/static_cast<float>(mnMaxY-mnMinY);
+
+        fx = K.at<float>(0,0);
+        fy = K.at<float>(1,1);
+        cx = K.at<float>(0,2);
+        cy = K.at<float>(1,2);
+        // 猜测是因为这种除法计算需要的时间略长，所以这里直接存储了这个中间计算结果
+        invfx = 1.0f/fx;
+        invfy = 1.0f/fy;
+
+        // 特殊的初始化过程完成，标志复位
+        mbInitialComputations=false;
+    }
+
+    // 计算假想的基线长度 baseline= mbf/fx
+    // 后面要对从RGBD相机输入的特征点,结合相机基线长度,焦距,以及点的深度等信息来计算其在假想的"右侧图像"上的匹配点
+    mb = mbf/fx;
+
+    if(pPrevF){
+        if(pPrevF->HasVelocity())
+            SetVelocity(pPrevF->GetVelocity());
+    }
+    else{
+        mVw.setZero();
+    }
+
+    mpMutexImu = new std::mutex();
+
+    //Set no stereo fisheye information
+    Nleft = -1;
+    Nright = -1;
+    mvLeftToRightMatch = vector<int>(0);
+    mvRightToLeftMatch = vector<int>(0);
+    mvStereo3Dpoints = vector<Eigen::Vector3f,Eigen::aligned_allocator<Eigen::Vector3f>>(0);
+    monoLeft = -1;
+    monoRight = -1;
+
+    // 将特征点分配到图像网格中
+    AssignFeaturesToGrid();
+}
+
+    /**
+ * @ //todo RGBD-IMU-Kinematic 模式普通帧构造函数
+ * */
+Frame::Frame(const cv::Mat &imGray,        // 灰度图像
+             const cv::Mat &imDepth,       // 深度图像
+             const double &timeStamp,      // 时间戳
+             ORBextractor* extractor,      // 特征提取器指针
+             ORBVocabulary* voc,           // BoW指针
+             cv::Mat &K,                   // 相机内参
+             cv::Mat &distCoef,            // 相机畸变参数
+             const float &bf,              // baseline
+             const float &thDepth,         // 近远点阈值
+             GeometricCamera* pCamera,     // 相机模型指针
+             Frame* pPrevF,                // 上一普通帧指针
+             const IMU::Calib &ImuCalib,   // IMU噪声和外参
+             const Joint::Calib &JointCalib)
+        :mpcpi(NULL),mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
+         mTimeStamp(timeStamp), mK(K.clone()), mK_(Converter::toMatrix3f(K)),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
+         mImuCalib(ImuCalib), mpImuPreintegrated(NULL), mpPrevFrame(pPrevF), mpImuPreintegratedFrame(NULL), mpReferenceKF(static_cast<KeyFrame*>(NULL)), mbIsSet(false), mbImuPreintegrated(false),
+         mpCamera(pCamera),mpCamera2(nullptr), mbHasPose(false), mbHasVelocity(false), mJointCalib(JointCalib)
 {
     // Frame ID
     mnId=nNextId++;
@@ -223,7 +352,7 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
 #ifdef REGISTER_TIMES
     std::chrono::steady_clock::time_point time_EndExtORB = std::chrono::steady_clock::now();
 
-    mTimeORB_Ext = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(time_EndExtORB - time_StartExtORB).count();
+mTimeORB_Ext = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(time_EndExtORB - time_StartExtORB).count();
 #endif
 
 
@@ -272,20 +401,20 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
     }
 
     mpMutexImu = new std::mutex();
+    mpMutexJoint = new std::mutex();  // todo new mutex
 
     //Set no stereo fisheye information
     Nleft = -1;
     Nright = -1;
     mvLeftToRightMatch = vector<int>(0);
     mvRightToLeftMatch = vector<int>(0);
-    mvStereo3Dpoints = vector<Eigen::Vector3f>(0);
+    mvStereo3Dpoints = vector<Eigen::Vector3f,Eigen::aligned_allocator<Eigen::Vector3f>>(0);
     monoLeft = -1;
     monoRight = -1;
 
     AssignFeaturesToGrid();
 }
-
-
+//danmu
 Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, GeometricCamera* pCamera, cv::Mat &distCoef, const float &bf, const float &thDepth, Frame* pPrevF, const IMU::Calib &ImuCalib)
     :mpcpi(NULL),mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
      mTimeStamp(timeStamp), mK(static_cast<Pinhole*>(pCamera)->toK()), mK_(static_cast<Pinhole*>(pCamera)->toK_()), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
@@ -360,7 +489,7 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extra
     Nright = -1;
     mvLeftToRightMatch = vector<int>(0);
     mvRightToLeftMatch = vector<int>(0);
-    mvStereo3Dpoints = vector<Eigen::Vector3f>(0);
+    mvStereo3Dpoints = vector<Eigen::Vector3f,Eigen::aligned_allocator<Eigen::Vector3f>>(0);
     monoLeft = -1;
     monoRight = -1;
 
@@ -379,6 +508,7 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extra
     }
 
     mpMutexImu = new std::mutex();
+    mpMutexJoint = new std::mutex();  // todo new modify
 }
 
 
@@ -429,7 +559,7 @@ bool Frame::isSet() const {
 }
 
 void Frame::SetPose(const Sophus::SE3<float> &Tcw) {
-    mTcw = Tcw;
+    mTcw = Tcw;   ///< 相继姿态，世界坐标系到相机坐标系的变换矩阵
 
     UpdatePoseMatrices();
     mbIsSet = true;
@@ -453,7 +583,7 @@ Eigen::Vector3f Frame::GetVelocity() const
 {
     return mVw;
 }
-
+// notice 用IMU更新cam赋值
 void Frame::SetImuPoseVelocity(const Eigen::Matrix3f &Rwb, const Eigen::Vector3f &twb, const Eigen::Vector3f &Vwb)
 {
     mVw = Vwb;
@@ -463,6 +593,7 @@ void Frame::SetImuPoseVelocity(const Eigen::Matrix3f &Rwb, const Eigen::Vector3f
     Sophus::SE3f Tbw = Twb.inverse();
 
     mTcw = mImuCalib.mTcb * Tbw;
+
 
     UpdatePoseMatrices();
     mbIsSet = true;
@@ -484,6 +615,17 @@ Eigen::Matrix<float,3,1> Frame::GetImuPosition() const {
 
 Eigen::Matrix<float,3,3> Frame::GetImuRotation() {
     return mRwc * mImuCalib.mTcb.rotationMatrix();
+}
+
+// todo Joint com pose
+Eigen::Matrix<float,3,1> Frame::GetCoMPosition() const{
+    return  mRwc * mJointCalib.mTccom.translation() + mOw;
+}
+Eigen::Matrix<float,3,3> Frame::GetCoMRotation(){
+    return mRwc * mJointCalib.mTccom.rotationMatrix();
+}
+Sophus::SE3<float> Frame::GetCoMPose(){
+    return mTcw.inverse() * mJointCalib.mTccom;
 }
 
 Sophus::SE3<float> Frame::GetImuPose() {
@@ -508,7 +650,10 @@ Eigen::Vector3f Frame::GetRelativePoseTlr_translation() {
     return mTlr.translation();
 }
 
-
+/**
+ * @brief 判断一个点是否在视野内
+ * 计算了重投影坐标、观测方向夹角、预测在当前帧的尺度
+ * */
 bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
 {
     if(Nleft == -1){
@@ -654,6 +799,15 @@ Eigen::Vector3f Frame::inRefCoordinates(Eigen::Vector3f pCw)
     return mRcw * pCw + mtcw;
 }
 
+/**
+* @brief 给定一个坐标，返回区域内所有特征点// 寻找候选点, 返回vector vIndices
+* @param x 给定点的x
+* @param y 给定点的y
+* @param r 搜索半径
+* @param minLevel 金字塔下边界
+* @param maxLevel 金字塔上边界
+* @param bRight 是否是右相机
+*/
 vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const float  &r, const int minLevel, const int maxLevel, const bool bRight) const
 {
     vector<size_t> vIndices;
@@ -661,7 +815,7 @@ vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const f
 
     float factorX = r;
     float factorY = r;
-
+    // 计算 nMInCellX nMaxCellX, nMinCellY,nMaxCellY
     const int nMinCellX = max(0,(int)floor((x-mnMinX-factorX)*mfGridElementWidthInv));
     if(nMinCellX>=FRAME_GRID_COLS)
     {
@@ -687,7 +841,7 @@ vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const f
     }
 
     const bool bCheckLevels = (minLevel>0) || (maxLevel>=0);
-
+    // step 2 遍历网格
     for(int ix = nMinCellX; ix<=nMaxCellX; ix++)
     {
         for(int iy = nMinCellY; iy<=nMaxCellY; iy++)
@@ -709,11 +863,11 @@ vector<size_t> Frame::GetFeaturesInArea(const float &x, const float  &y, const f
                         if(kpUn.octave>maxLevel)
                             continue;
                 }
-
+                // 判断是否在范围内
                 const float distx = kpUn.pt.x-x;
                 const float disty = kpUn.pt.y-y;
 
-                if(fabs(distx)<factorX && fabs(disty)<factorY)
+                if(fabs(distx)<factorX && fabs(disty)<factorY) // 正方形区域
                     vIndices.push_back(vCell[j]);
             }
         }
@@ -899,7 +1053,7 @@ void Frame::ComputeStereoMatches()
             // coordinates in image pyramid at keypoint scale
             const float uR0 = mvKeysRight[bestIdxR].pt.x;
             const float scaleFactor = mvInvScaleFactors[kpL.octave];
-            const float scaleduL = round(kpL.pt.x*scaleFactor);
+            const float scaleduL = round(kpL.pt.x*scaleFactor); //
             const float scaledvL = round(kpL.pt.y*scaleFactor);
             const float scaleduR0 = round(uR0*scaleFactor);
 
@@ -1010,10 +1164,10 @@ bool Frame::UnprojectStereo(const int &i, Eigen::Vector3f &x3D)
     if(z>0) {
         const float u = mvKeysUn[i].pt.x;
         const float v = mvKeysUn[i].pt.y;
-        const float x = (u-cx)*z*invfx;
+        const float x = (u-cx)*z*invfx;  // 三维点的x坐标
         const float y = (v-cy)*z*invfy;
-        Eigen::Vector3f x3Dc(x, y, z);
-        x3D = mRwc * x3Dc + mOw;
+        Eigen::Vector3f x3Dc(x, y, z);  //在相机坐标系中三维点坐标
+        x3D = mRwc * x3Dc + mOw;  // 世界坐标系下三位点坐标
         return true;
     } else
         return false;
@@ -1029,6 +1183,18 @@ void Frame::setIntegrated()
 {
     unique_lock<std::mutex> lock(*mpMutexImu);
     mbImuPreintegrated = true;
+}
+
+bool Frame::JointIsCalculated()
+{
+    unique_lock<std::mutex> lock(*mpMutexJoint);
+    return mbJointCalculated;
+}
+
+void Frame::setCalculated()   // notice
+{
+    unique_lock<std::mutex> lock(*mpMutexJoint);
+    mbJointCalculated = true;
 }
 
 Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, GeometricCamera* pCamera2, Sophus::SE3f& Tlr,Frame* pPrevF, const IMU::Calib &ImuCalib)
@@ -1118,7 +1284,7 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
     AssignFeaturesToGrid();
 
     mpMutexImu = new std::mutex();
-
+    mpMutexJoint = new std::mutex();  // todo new modify
     UndistortKeyPoints();
 
 }
@@ -1135,7 +1301,7 @@ void Frame::ComputeStereoFishEyeMatches() {
     mvRightToLeftMatch = vector<int>(Nright,-1);
     mvDepth = vector<float>(Nleft,-1.0f);
     mvuRight = vector<float>(Nleft,-1);
-    mvStereo3Dpoints = vector<Eigen::Vector3f>(Nleft);
+    mvStereo3Dpoints = vector<Eigen::Vector3f,Eigen::aligned_allocator<Eigen::Vector3f>>(Nleft);
     mnCloseMPs = 0;
 
     //Perform a brute force between Keypoint in the left and right image

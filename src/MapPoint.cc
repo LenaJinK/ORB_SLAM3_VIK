@@ -326,6 +326,9 @@ float MapPoint::GetFoundRatio()
     return static_cast<float>(mnFound)/mnVisible;
 }
 
+/**
+ * @brief 计算地图点最具代表性的描述子
+ * */
 void MapPoint::ComputeDistinctiveDescriptors()
 {
     // Retrieve all observed descriptors
@@ -344,9 +347,10 @@ void MapPoint::ComputeDistinctiveDescriptors()
         return;
 
     vDescriptors.reserve(observations.size());
-
+    // 遍历观测到地图点的所有关键帧,对应的ORB描述子放到向量vDescriptors中
     for(map<KeyFrame*,tuple<int,int>>::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
     {
+        //
         KeyFrame* pKF = mit->first;
 
         if(!pKF->isBad()){
@@ -366,6 +370,7 @@ void MapPoint::ComputeDistinctiveDescriptors()
         return;
 
     // Compute distances between them
+    // 计算它们两两之间的距离
     const size_t N = vDescriptors.size();
 
     float Distances[N][N];
@@ -381,12 +386,14 @@ void MapPoint::ComputeDistinctiveDescriptors()
     }
 
     // Take the descriptor with least median distance to the rest
+    // 选择最具代表性的描述子
     int BestMedian = INT_MAX;
     int BestIdx = 0;
     for(size_t i=0;i<N;i++)
     {
         vector<int> vDists(Distances[i],Distances[i]+N);
         sort(vDists.begin(),vDists.end());
+        // 获取中值
         int median = vDists[0.5*(N-1)];
 
         if(median<BestMedian)
@@ -416,15 +423,20 @@ tuple<int,int> MapPoint::GetIndexInKeyFrame(KeyFrame *pKF)
     else
         return tuple<int,int>(-1,-1);
 }
-
+/**
+ * @brief return (mObservations.count(pKF));
+ */
 bool MapPoint::IsInKeyFrame(KeyFrame *pKF)
 {
     unique_lock<mutex> lock(mMutexFeatures);
     return (mObservations.count(pKF));
 }
-
+/**
+ * @brief 更新地图点的平均观测方向向量、观测距离范围
+ * */
 void MapPoint::UpdateNormalAndDepth()
 {
+    // 取出所有观测到该三维点的关键帧，存入observations
     map<KeyFrame*,tuple<int,int>> observations;
     KeyFrame* pRefKF;
     Eigen::Vector3f Pos;
@@ -440,7 +452,8 @@ void MapPoint::UpdateNormalAndDepth()
 
     if(observations.empty())
         return;
-
+    
+    //  计算地图点的平均观测方向
     Eigen::Vector3f normal;
     normal.setZero();
     int n=0;
@@ -487,9 +500,9 @@ void MapPoint::UpdateNormalAndDepth()
 
     {
         unique_lock<mutex> lock3(mMutexPos);
-        mfMaxDistance = dist*levelScaleFactor;
-        mfMinDistance = mfMaxDistance/pRefKF->mvScaleFactors[nLevels-1];
-        mNormalVector = normal/n;
+        mfMaxDistance = dist*levelScaleFactor;   // 上限
+        mfMinDistance = mfMaxDistance/pRefKF->mvScaleFactors[nLevels-1];  // 下限
+        mNormalVector = normal/n;   // 平均观测方向
     }
 }
 
@@ -510,7 +523,8 @@ float MapPoint::GetMaxDistanceInvariance()
     unique_lock<mutex> lock(mMutexPos);
     return 1.2f * mfMaxDistance;
 }
-
+/**
+ * @brief 预测地图点所在金字塔的层级*/
 int MapPoint::PredictScale(const float &currentDist, KeyFrame* pKF)
 {
     float ratio;
@@ -518,7 +532,7 @@ int MapPoint::PredictScale(const float &currentDist, KeyFrame* pKF)
         unique_lock<mutex> lock(mMutexPos);
         ratio = mfMaxDistance/currentDist;
     }
-
+    // 取对数
     int nScale = ceil(log(ratio)/pKF->mfLogScaleFactor);
     if(nScale<0)
         nScale = 0;

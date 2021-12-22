@@ -24,6 +24,10 @@ namespace ORB_SLAM3
 
 ImuCamPose::ImuCamPose(KeyFrame *pKF):its(0)
 {
+    // todo load kinematic pose
+    twcom = pKF->GetCoMPosition().cast<double>();
+    Rwcom = pKF->GetCoMRotation().cast<double>();
+
     // Load IMU pose
     twb = pKF->GetImuPosition().cast<double>();
     Rwb = pKF->GetImuRotation().cast<double>();
@@ -41,6 +45,12 @@ ImuCamPose::ImuCamPose(KeyFrame *pKF):its(0)
     Rcb.resize(num_cams);
     Rbc.resize(num_cams);
     tbc.resize(num_cams);
+
+    Rccom.resize(num_cams);    // todo
+    tccom.resize(num_cams);
+    Rcomc.resize(num_cams);
+    tcomc.resize(num_cams);
+
     pCamera.resize(num_cams);
 
     // Left camera
@@ -52,6 +62,11 @@ ImuCamPose::ImuCamPose(KeyFrame *pKF):its(0)
     tbc[0] = pKF->mImuCalib.mTbc.translation().cast<double>();
     pCamera[0] = pKF->mpCamera;
     bf = pKF->mbf;
+    Rccom[0] = pKF->mJointCalib.mTccom.rotationMatrix().cast<double>();
+    tccom[0] = pKF->mJointCalib.mTccom.translation().cast<double>();
+    Rcomc[0] = Rccom[0].transpose();
+    tcomc[0] = pKF->mJointCalib.mTcomc.translation().cast<double>();
+
 
     if(num_cams>1)
     {
@@ -76,6 +91,10 @@ ImuCamPose::ImuCamPose(Frame *pF):its(0)
     twb = pF->GetImuPosition().cast<double>();
     Rwb = pF->GetImuRotation().cast<double>();
 
+    // todo Load com pose
+    twcom = pF->GetCoMPosition().cast<double>();
+    Rwcom = pF->GetCoMRotation().cast<double>();
+
     // Load camera poses
     int num_cams;
     if(pF->mpCamera2)
@@ -90,6 +109,10 @@ ImuCamPose::ImuCamPose(Frame *pF):its(0)
     Rbc.resize(num_cams);
     tbc.resize(num_cams);
     pCamera.resize(num_cams);
+    Rccom.resize(num_cams);
+    tccom.resize(num_cams);
+    Rcomc.resize(num_cams);
+    tcomc.resize(num_cams);
 
     // Left camera
     tcw[0] = pF->GetPose().translation().cast<double>();
@@ -100,6 +123,10 @@ ImuCamPose::ImuCamPose(Frame *pF):its(0)
     tbc[0] = pF->mImuCalib.mTbc.translation().cast<double>();
     pCamera[0] = pF->mpCamera;
     bf = pF->mbf;
+    Rccom[0] = pF->mJointCalib.mTccom.rotationMatrix().cast<double>();
+    tccom[0] = pF->mJointCalib.mTccom.translation().cast<double>();
+    Rcomc[0] = Rccom[0].transpose();
+    tcomc[0] = pF->mJointCalib.mTcomc.translation().cast<double>();
 
     if(num_cams>1)
     {
@@ -129,12 +156,26 @@ ImuCamPose::ImuCamPose(Eigen::Matrix3d &_Rwc, Eigen::Vector3d &_twc, KeyFrame* p
     tbc.resize(1);
     pCamera.resize(1);
 
+    Rccom.resize(1);
+    tccom.resize(1);
+    Rcomc.resize(1);
+    tcomc.resize(1);
+
     tcb[0] = pKF->mImuCalib.mTcb.translation().cast<double>();
     Rcb[0] = pKF->mImuCalib.mTcb.rotationMatrix().cast<double>();
     Rbc[0] = Rcb[0].transpose();
     tbc[0] = pKF->mImuCalib.mTbc.translation().cast<double>();
     twb = _Rwc * tcb[0] + _twc;
     Rwb = _Rwc * Rcb[0];
+
+    // todo Load com pose
+    Rccom[0] = pKF->mJointCalib.mTccom.rotationMatrix().cast<double>();
+    tccom[0] = pKF->mJointCalib.mTccom.translation().cast<double>();
+    Rcomc[0] = Rccom[0].transpose();
+    tcomc[0] = pKF->mJointCalib.mTcomc.translation().cast<double>();
+    twcom = _Rwc * tccom[0]+_twc;
+    Rwcom = _Rwc * Rccom[0];
+
     Rcw[0] = _Rwc.transpose();
     tcw[0] = -Rcw[0] * _twc;
     pCamera[0] = pKF->mpCamera;
@@ -145,8 +186,11 @@ ImuCamPose::ImuCamPose(Eigen::Matrix3d &_Rwc, Eigen::Vector3d &_twc, KeyFrame* p
     DR.setIdentity();
 }
 
-void ImuCamPose::SetParam(const std::vector<Eigen::Matrix3d> &_Rcw, const std::vector<Eigen::Vector3d> &_tcw, const std::vector<Eigen::Matrix3d> &_Rbc,
-              const std::vector<Eigen::Vector3d> &_tbc, const double &_bf)
+// todo
+void ImuCamPose::SetParam(const std::vector<Eigen::Matrix3d,Eigen::aligned_allocator<Eigen::Matrix3d>> &_Rcw,
+                          const std::vector<Eigen::Vector3d,Eigen::aligned_allocator<Eigen::Vector3d>> &_tcw,
+                          const std::vector<Eigen::Matrix3d,Eigen::aligned_allocator<Eigen::Matrix3d>> &_Rbc,
+                          const std::vector<Eigen::Vector3d,Eigen::aligned_allocator<Eigen::Vector3d>> &_tbc, const double &_bf)
 {
     Rbc = _Rbc;
     tbc = _tbc;
@@ -167,9 +211,10 @@ void ImuCamPose::SetParam(const std::vector<Eigen::Matrix3d> &_Rcw, const std::v
     bf = _bf;
 }
 
+// notice 3D->uv
 Eigen::Vector2d ImuCamPose::Project(const Eigen::Vector3d &Xw, int cam_idx) const
 {
-    Eigen::Vector3d Xc = Rcw[cam_idx] * Xw + tcw[cam_idx];
+    Eigen::Vector3d Xc = Rcw[cam_idx] * Xw + tcw[cam_idx];   // 到相机坐标
 
     return pCamera[cam_idx]->project(Xc);
 }
@@ -183,16 +228,16 @@ Eigen::Vector3d ImuCamPose::ProjectStereo(const Eigen::Vector3d &Xw, int cam_idx
     pc(2) = pc(0) - bf*invZ;
     return pc;
 }
-
+// shenduzhi
 bool ImuCamPose::isDepthPositive(const Eigen::Vector3d &Xw, int cam_idx) const
 {
     return (Rcw[cam_idx].row(2) * Xw + tcw[cam_idx](2)) > 0.0;
 }
 
-void ImuCamPose::Update(const double *pu)
+void ImuCamPose::Update(const double *pu)  // update in the imu reference
 {
     Eigen::Vector3d ur, ut;
-    ur << pu[0], pu[1], pu[2];
+    ur << pu[0], pu[1], pu[2];  // 前面是R
     ut << pu[3], pu[4], pu[5];
 
     // Update body pose
@@ -217,12 +262,18 @@ void ImuCamPose::Update(const double *pu)
         tcw[i] = Rcb[i] * tbw + tcb[i];
     }
 
-}
+    // todo Update CoM pose
+    Rccom.resize(1);
+    tccom.resize(1);
+    Rwcom = Rcw[0].transpose()*Rccom[0];
+    twcom = Rcw[0].transpose()*tccom[0] - Rcw[0].transpose()*tcw[0];
 
+}
+// todo update in the world reference
 void ImuCamPose::UpdateW(const double *pu)
 {
     Eigen::Vector3d ur, ut;
-    ur << pu[0], pu[1], pu[2];
+    ur << pu[0], pu[1], pu[2];  // 基于世界坐标系
     ut << pu[3], pu[4], pu[5];
 
 
@@ -253,6 +304,8 @@ void ImuCamPose::UpdateW(const double *pu)
         Rcw[i] = Rcb[i] * Rbw;
         tcw[i] = Rcb[i] * tbw+tcb[i];
     }
+
+
 }
 
 InvDepthPoint::InvDepthPoint(double _rho, double _u, double _v, KeyFrame* pHostKF): u(_u), v(_v), rho(_rho),
@@ -268,10 +321,10 @@ void InvDepthPoint::Update(const double *pu)
 
 bool VertexPose::read(std::istream& is)
 {
-    std::vector<Eigen::Matrix<double,3,3> > Rcw;
-    std::vector<Eigen::Matrix<double,3,1> > tcw;
-    std::vector<Eigen::Matrix<double,3,3> > Rbc;
-    std::vector<Eigen::Matrix<double,3,1> > tbc;
+    std::vector<Eigen::Matrix<double,3,3>,Eigen::aligned_allocator<Eigen::Matrix<double,3,3>>> Rcw;
+    std::vector<Eigen::Matrix<double,3,1>,Eigen::aligned_allocator<Eigen::Matrix<double,3,1>>> tcw;
+    std::vector<Eigen::Matrix<double,3,3>,Eigen::aligned_allocator<Eigen::Matrix<double,3,3>>> Rbc;
+    std::vector<Eigen::Matrix<double,3,1>,Eigen::aligned_allocator<Eigen::Matrix<double,3,1>>> tbc;
 
     const int num_cams = _estimate.Rbc.size();
     for(int idx = 0; idx<num_cams; idx++)
@@ -309,11 +362,11 @@ bool VertexPose::read(std::istream& is)
 
 bool VertexPose::write(std::ostream& os) const
 {
-    std::vector<Eigen::Matrix<double,3,3> > Rcw = _estimate.Rcw;
-    std::vector<Eigen::Matrix<double,3,1> > tcw = _estimate.tcw;
+    std::vector<Eigen::Matrix<double,3,3>,Eigen::aligned_allocator<Eigen::Matrix<double,3,3>> > Rcw = _estimate.Rcw;
+    std::vector<Eigen::Matrix<double,3,1>,Eigen::aligned_allocator<Eigen::Matrix<double,3,1>> > tcw = _estimate.tcw;
 
-    std::vector<Eigen::Matrix<double,3,3> > Rbc = _estimate.Rbc;
-    std::vector<Eigen::Matrix<double,3,1> > tbc = _estimate.tbc;
+    std::vector<Eigen::Matrix<double,3,3>,Eigen::aligned_allocator<Eigen::Matrix<double,3,3>> > Rbc = _estimate.Rbc;
+    std::vector<Eigen::Matrix<double,3,1>,Eigen::aligned_allocator<Eigen::Matrix<double,3,1>> > tbc = _estimate.tbc;
 
     const int num_cams = tcw.size();
 
@@ -358,7 +411,7 @@ void EdgeMono::linearizeOplus()
     const Eigen::Matrix3d &Rcb = VPose->estimate().Rcb[cam_idx];
 
     const Eigen::Matrix<double,2,3> proj_jac = VPose->estimate().pCamera[cam_idx]->projectJac(Xc);
-    _jacobianOplusXi = -proj_jac * Rcw;
+    _jacobianOplusXi = -proj_jac * Rcw;  // landmark Jacob
 
     Eigen::Matrix<double,3,6> SE3deriv;
     double x = Xb(0);
@@ -487,28 +540,77 @@ VertexAccBias::VertexAccBias(Frame *pF)
     setEstimate(ba);
 }
 
+// todo 运动学边
+void EdgeKinematic::computeError() {
+    const VertexPose* VP1 = static_cast<const VertexPose*>(_vertices[0]);
+    const VertexPose* VP2 = static_cast<const VertexPose*>(_vertices[1]);
+    const Eigen::Matrix3d Rwcom1 = VP1->estimate().Rwcom;
+    const Eigen::Vector3d twcom1 = VP1->estimate().twcom;
+    const Eigen::Matrix3d Rwcom2 = VP2->estimate().Rwcom;
+    const Eigen::Vector3d twcom2 = VP2->estimate().twcom;
 
+    const Eigen::Matrix3d dR = mT12.rotationMatrix().cast<double>();
+    const Eigen::Vector3d dt = mT12.translation().cast<double>();
+    const Eigen::Matrix3d eR = dR.transpose()*Rwcom1.transpose()*Rwcom2;
+    const Eigen::Vector3d er = LogSO3(eR);
+    const Eigen::Vector3d et = Rwcom1.transpose()*(twcom2-twcom1) - dt;
 
+    _error << er,et;
+
+}
+void EdgeKinematic::linearizeOplus() {
+    const VertexPose* VP1 = static_cast<const VertexPose*>(_vertices[0]);
+    const VertexPose* VP2 = static_cast<const VertexPose*>(_vertices[1]);
+
+    const Eigen::Matrix3d Rwcom1 = VP1->estimate().Rwcom;
+    const Eigen::Vector3d twcom1 = VP1->estimate().twcom;
+    const Eigen::Matrix3d Rwcom2 = VP2->estimate().Rwcom;
+    const Eigen::Vector3d twcom2 = VP2->estimate().twcom;
+
+    const Eigen::Matrix3d dR = mT12.rotationMatrix().cast<double>();
+    const Eigen::Vector3d dt = mT12.translation().cast<double>();
+    const Eigen::Matrix3d eR = dR.transpose()*Rwcom1.transpose()*Rwcom2;
+    const Eigen::Vector3d er = LogSO3(eR);
+    //Jacobians wrt Pose 1
+    _jacobianOplusXi.setZero();
+    // rotation
+    _jacobianOplusXi.block<3,3>(0,0) = -InverseRightJacobianSO3(er)*Rwcom2.transpose()*Rwcom1;
+    _jacobianOplusXi.block<3,3>(3,0) = Sophus::SO3d::hat(Rwcom1.transpose()*(twcom2-twcom1));
+    //translation
+    _jacobianOplusXi.block<3,3>(3,3) = -Eigen::Matrix3d::Identity();
+    //Jacobians wrt Pose 2
+    _jacobianOplusXj.setZero();
+    //rotation
+    _jacobianOplusXj.block<3,3>(0,0) = InverseRightJacobianSO3(er);
+    //translation
+    _jacobianOplusXj.block<3,3>(3,3) = Rwcom1.transpose() * Rwcom2;
+}
+// notice 惯性边
 EdgeInertial::EdgeInertial(IMU::Preintegrated *pInt):JRg(pInt->JRg.cast<double>()),
     JVg(pInt->JVg.cast<double>()), JPg(pInt->JPg.cast<double>()), JVa(pInt->JVa.cast<double>()),
     JPa(pInt->JPa.cast<double>()), mpInt(pInt), dt(pInt->dT)
 {
+    // 准备工作，把预积分类里面的值先取出来，包含信息的是两帧之间n多个imu信息预积分来的
     // This edge links 6 vertices
+    // 6元边
     resize(6);
+    // 1. 定义重力
     g << 0, 0, -IMU::GRAVITY_VALUE;
 
+    // 2. 读取协方差矩阵的前9*9部分的逆矩阵，该部分表示的是预积分测量噪声的协方差矩阵
     Matrix9d Info = pInt->C.block<9,9>(0,0).cast<double>().inverse();
+    // 3. 强制让其成为对角矩阵
     Info = (Info+Info.transpose())/2;
+    // 4. 让特征值很小的时候置为0，再重新计算信息矩阵（暂不知这么操作的目的是什么，先搞清楚操作流程吧）
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double,9,9> > es(Info);
     Eigen::Matrix<double,9,1> eigs = es.eigenvalues();
     for(int i=0;i<9;i++)
         if(eigs[i]<1e-12)
             eigs[i]=0;
+    // asDiagonal 生成对角矩阵
     Info = es.eigenvectors()*eigs.asDiagonal()*es.eigenvectors().transpose();
     setInformation(Info);
 }
-
-
 
 
 void EdgeInertial::computeError()
@@ -561,7 +663,7 @@ void EdgeInertial::linearizeOplus()
     _jacobianOplus[0].block<3,3>(0,0) = -invJr*Rwb2.transpose()*Rwb1; // OK
     _jacobianOplus[0].block<3,3>(3,0) = Sophus::SO3d::hat(Rbw1*(VV2->estimate() - VV1->estimate() - g*dt)); // OK
     _jacobianOplus[0].block<3,3>(6,0) = Sophus::SO3d::hat(Rbw1*(VP2->estimate().twb - VP1->estimate().twb
-                                                   - VV1->estimate()*dt - 0.5*g*dt*dt)); // OK
+                                                   - VV1->estimate()*dt - 0.5*g*dt*dt)); // OK hat是向量和反对称矩阵互换
     // translation
     _jacobianOplus[0].block<3,3>(6,3) = -Eigen::Matrix3d::Identity(); // OK
 
@@ -773,7 +875,7 @@ void EdgePriorGyro::linearizeOplus()
 
 }
 
-// SO3 FUNCTIONS
+// notice SO3 FUNCTIONS
 Eigen::Matrix3d ExpSO3(const Eigen::Vector3d &w)
 {
     return ExpSO3(w[0],w[1],w[2]);
@@ -784,7 +886,7 @@ Eigen::Matrix3d ExpSO3(const double x, const double y, const double z)
     const double d2 = x*x+y*y+z*z;
     const double d = sqrt(d2);
     Eigen::Matrix3d W;
-    W << 0.0, -z, y,z, 0.0, -x,-y,  x, 0.0;
+    W << 0.0, -z, y,z, 0.0, -x,-y,  x, 0.0;  // ^
     if(d<1e-5)
     {
         Eigen::Matrix3d res = Eigen::Matrix3d::Identity() + W +0.5*W*W;
@@ -811,6 +913,28 @@ Eigen::Vector3d LogSO3(const Eigen::Matrix3d &R)
         return w;
     else
         return theta*w/s;
+}
+Vector6d LogSE3(const Sophus::SE3d &T){   // todo new code
+    Eigen::Matrix3d R = T.rotationMatrix();
+    const double tr = R(0,0)+R(1,1)+R(2,2);  //trace
+    Eigen::Vector3d w;
+    w << (R(2,1)-R(1,2))/2, (R(0,2)-R(2,0))/2, (R(1,0)-R(0,1))/2;   // 由反对称矩阵恢复向量，三个值
+    const double costheta = (tr-1.0)*0.5f;
+
+    const double theta = acos(costheta);  // theta值
+    const double s = sin(theta);   // sin
+
+    Eigen::Matrix3d I = Eigen::Matrix3d::Identity();
+    Eigen::Vector3d a = w/s;
+    Eigen::Matrix3d A;
+    A << 0.0, -a.z(),a.y(),a.z(),0.0,-a.x(),-a.y(),a.x(),0.0;
+
+    Eigen::Matrix3d J = s/theta*I + (1 - s/theta)* a * a.transpose() + A*(1-costheta)/theta;
+    Eigen::Vector3d rho = J.inverse()*T.translation();
+    Vector6d xi;
+    xi<< rho,theta*w/s;
+
+    return xi;
 }
 
 Eigen::Matrix3d InverseRightJacobianSO3(const Eigen::Vector3d &v)
@@ -859,5 +983,8 @@ Eigen::Matrix3d Skew(const Eigen::Vector3d &w)
     W << 0.0, -w[2], w[1],w[2], 0.0, -w[0],-w[1],  w[0], 0.0;
     return W;
 }
+
+
+
 
 }

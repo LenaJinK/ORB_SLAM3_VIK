@@ -42,7 +42,7 @@ class LocalMapping
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    LocalMapping(System* pSys, Atlas* pAtlas, const float bMonocular, bool bInertial, const string &_strSeqName=std::string());
+    LocalMapping(System* pSys, Atlas* pAtlas, bool bMonocular, bool bInertial, const string &_strSeqName=std::string());
 
     void SetLoopCloser(LoopClosing* pLoopCloser);
 
@@ -145,7 +145,7 @@ protected:
     bool mbInertial;
 
     void ResetIfRequested();
-    bool mbResetRequested;
+    bool mbResetRequested;    // 这个变量为true表示需要重置地图
     bool mbResetRequestedActiveMap;
     Map* mpMapToReset;
     std::mutex mMutexReset;
@@ -160,8 +160,8 @@ protected:
 
     LoopClosing* mpLoopCloser;
     Tracking* mpTracker;
-
-    std::list<KeyFrame*> mlNewKeyFrames;
+    // tracking线程向LocalMapping中插入关键帧是先插到该队列中
+    std::list<KeyFrame*> mlNewKeyFrames;  ///< 等待处理的关键帧列表
 
     KeyFrame* mpCurrentKeyFrame;
 

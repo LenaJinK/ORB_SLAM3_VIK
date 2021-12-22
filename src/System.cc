@@ -25,19 +25,29 @@
 #include <iomanip>
 #include <openssl/md5.h>
 #include <boost/serialization/base_object.hpp>
-#include <boost/serialization/string.hpp>
+
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/binary_iarchive.hpp>
 #include <boost/archive/binary_oarchive.hpp>
-#include <boost/archive/xml_iarchive.hpp>
-#include <boost/archive/xml_oarchive.hpp>
+
+#include "include/forward_kinematics.h"
+
+#include <time.h>
 
 namespace ORB_SLAM3
 {
 
 Verbose::eLevel Verbose::th = Verbose::VERBOSITY_NORMAL;
-
+/**
+ * @brief 系统的构造函数，将会启动其他的线程
+ * @param strVocFile 词袋文件所在路径
+ * @param strSettingsFile 配置文件所在路径
+ * @param sensor 传感器类型
+ * @param bUseViewer 是否使用可视化界面
+ * @param initFr initFr表示初始化帧的id,开始设置为0
+ * @param strSequence 序列名,在跟踪线程和局部建图线程用得到
+ */
 System::System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor,
                const bool bUseViewer, const int initFr, const string &strSequence):
     mSensor(sensor), mpViewer(static_cast<Viewer*>(NULL)), mbReset(false), mbResetActiveMap(false),
@@ -45,14 +55,10 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 {
     // Output welcome message
     cout << endl <<
-    "ORB-SLAM3 Copyright (C) 2017-2020 Carlos Campos, Richard Elvira, Juan J. Gómez, José M.M. Montiel and Juan D. Tardós, University of Zaragoza." << endl <<
-    "ORB-SLAM2 Copyright (C) 2014-2016 Raúl Mur-Artal, José M.M. Montiel and Juan D. Tardós, University of Zaragoza." << endl <<
-    "This program comes with ABSOLUTELY NO WARRANTY;" << endl  <<
-    "This is free software, and you are welcome to redistribute it" << endl <<
-    "under certain conditions. See LICENSE.txt." << endl << endl;
+    "ORB-SLAM3 start! Good luck!" << endl << endl;
 
     cout << "Input sensor was set to: ";
-
+    //step 1 传感器类型
     if(mSensor==MONOCULAR)
         cout << "Monocular" << endl;
     else if(mSensor==STEREO)
@@ -65,19 +71,29 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         cout << "Stereo-Inertial" << endl;
     else if(mSensor==IMU_RGBD)
         cout << "RGB-D-Inertial" << endl;
+    else if(mSensor==IMU_RGBD_KINEMATIC)
+        cout << "RGB-D-Inertial-Kinematic" << endl;  // notice
 
     //Check settings file
+    // Step 2 读取配置文件
     cv::FileStorage fsSettings(strSettingsFile.c_str(), cv::FileStorage::READ);
     if(!fsSettings.isOpened())
     {
        cerr << "Failed to open settings file at: " << strSettingsFile << endl;
        exit(-1);
+    }else{
+        cout << "Open settings file at: " << strSettingsFile << endl;
     }
+
+    // todo new 读取点云参数 for point cloud resolution
+    float resolution = fsSettings["PointCloudMapping.Resolution"];
+    float meank = fsSettings["meank"];
+    float thresh = fsSettings["thresh"];
 
     cv::FileNode node = fsSettings["File.version"];
     if(!node.empty() && node.isString() && node.string() == "1.0"){
         settings_ = new Settings(strSettingsFile,mSensor);
-
+        // 保存及加载地图的名字
         mStrLoadAtlasFromFile = settings_->atlasLoadFile();
         mStrSaveAtlasToFile = settings_->atlasSaveFile();
 
@@ -98,6 +114,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         }
     }
 
+    // 是否激活回环，默认是开着的
     node = fsSettings["loopClosing"];
     bool activeLC = true;
     if(!node.empty())
@@ -107,15 +124,15 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 
     mStrVocabularyFilePath = strVocFile;
 
-    bool loadedAtlas = false;
+    bool loadedAtlas = false;   // ORBSLAM3新加的多地图管理功能，这里加载Atlas标识符,但是没有用到
 
-    if(mStrLoadAtlasFromFile.empty())
+    if(mStrLoadAtlasFromFile.empty())   //没有先验地图
     {
         //Load ORB Vocabulary
         cout << endl << "Loading ORB Vocabulary. This could take a while..." << endl;
 
-        mpVocabulary = new ORBVocabulary();
-        bool bVocLoad = mpVocabulary->loadFromTextFile(strVocFile);
+        mpVocabulary = new ORBVocabulary();                                 // 建立一个新的ORB字典
+        bool bVocLoad = mpVocabulary->loadFromTextFile(strVocFile); // 读取预训练好的ORB字典并返回成功/失败标志
         if(!bVocLoad)
         {
             cerr << "Wrong path to vocabulary. " << endl;
@@ -125,19 +142,23 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         cout << "Vocabulary loaded!" << endl << endl;
 
         //Create KeyFrame Database
+        // step 4 创建关键帧数据库
         mpKeyFrameDatabase = new KeyFrameDatabase(*mpVocabulary);
 
         //Create the Atlas
+        // Step 5 创建多地图，参数0表示初始化关键帧id为0
         cout << "Initialization of Atlas from scratch " << endl;
         mpAtlas = new Atlas(0);
     }
     else
     {
+
         //Load ORB Vocabulary
         cout << endl << "Loading ORB Vocabulary. This could take a while..." << endl;
 
+        clock_t tStart = clock();  // todo new
         mpVocabulary = new ORBVocabulary();
-        bool bVocLoad = mpVocabulary->loadFromTextFile(strVocFile);
+        bool bVocLoad = mpVocabulary->loadFromTextFile(strVocFile);  // notice 只从txt文件中读取字典
         if(!bVocLoad)
         {
             cerr << "Wrong path to vocabulary. " << endl;
@@ -163,7 +184,6 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         }
         //mpKeyFrameDatabase = new KeyFrameDatabase(*mpVocabulary);
 
-
         //cout << "KF in DB: " << mpKeyFrameDatabase->mnNumKFs << "; words: " << mpKeyFrameDatabase->mnNumWords << endl;
 
         loadedAtlas = true;
@@ -177,25 +197,36 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         //usleep(10*1000*1000);
     }
 
-
-    if (mSensor==IMU_STEREO || mSensor==IMU_MONOCULAR || mSensor==IMU_RGBD)
+    // SetInertialSensor()函数中,设置mbIsInertial = true;以后的跟踪和预积分将和这个标志有关
+    if (mSensor==IMU_STEREO || mSensor==IMU_MONOCULAR || mSensor==IMU_RGBD || mSensor == System::IMU_RGBD_KINEMATIC)
         mpAtlas->SetInertialSensor();
 
-    //Create Drawers. These are used by the Viewer
+    // notice Step 6 依次创建跟踪、局部建图、闭环、显示线程
+    // Create Drawers. These are used by the Viewer
+    // 创建用于显示帧和地图的类，由Viewer调用
     mpFrameDrawer = new FrameDrawer(mpAtlas);
     mpMapDrawer = new MapDrawer(mpAtlas, strSettingsFile, settings_);
 
+    // todo new Initialize pointcloud mapping
+    mpPointCloudMapping = make_shared<PointCloudMapping>( resolution,meank,thresh );
+    cout<< "Initialize mpPointCloudMapping: " << resolution<<"\t"<<meank<<"\t"<<thresh<<endl;// todo test
+
     //Initialize the Tracking thread
     //(it will live in the main thread of execution, the one that called this constructor)
-    cout << "Seq. Name: " << strSequence << endl;
-    mpTracker = new Tracking(this, mpVocabulary, mpFrameDrawer, mpMapDrawer,
-                             mpAtlas, mpKeyFrameDatabase, strSettingsFile, mSensor, settings_, strSequence);
-
+    // 创建跟踪线程（主线程）,不会立刻开启,会在对图像和imu预处理后在main主线程种执行
+//    cout << "Seq. Name: " << strSequence << endl;
+    mpTracker = new Tracking(this, mpVocabulary, mpFrameDrawer, mpMapDrawer,mpAtlas, mpKeyFrameDatabase, strSettingsFile, mSensor, settings_, strSequence);
+ /*   mpTracker = new Tracking(this, mpVocabulary, mpFrameDrawer, mpMapDrawer,mpAtlas,
+                             mpPointCloudMapping,
+                             mpKeyFrameDatabase, strSettingsFile, mSensor, settings_, strSequence);  // todo new 增加mpPointCloudMapping
+*/
     //Initialize the Local Mapping thread and launch
+    //创建并开启local mapping线程
     mpLocalMapper = new LocalMapping(this, mpAtlas, mSensor==MONOCULAR || mSensor==IMU_MONOCULAR,
-                                     mSensor==IMU_MONOCULAR || mSensor==IMU_STEREO || mSensor==IMU_RGBD, strSequence);
+                                     mSensor==IMU_MONOCULAR || mSensor==IMU_STEREO || mSensor==IMU_RGBD || mSensor == System::IMU_RGBD_KINEMATIC, strSequence);
     mptLocalMapping = new thread(&ORB_SLAM3::LocalMapping::Run,mpLocalMapper);
     mpLocalMapper->mInitFr = initFr;
+    // 设置最远3D地图点的深度值，如果超过阈值，说明可能三角化不太准确，丢弃
     if(settings_)
         mpLocalMapper->mThFarPoints = settings_->thFarPoints();
     else
@@ -208,12 +239,14 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     else
         mpLocalMapper->mbFarPoints = false;
 
-    //Initialize the Loop Closing thread and launch
+    // Initialize the Loop Closing thread and launch
     // mSensor!=MONOCULAR && mSensor!=IMU_MONOCULAR
-    mpLoopCloser = new LoopClosing(mpAtlas, mpKeyFrameDatabase, mpVocabulary, mSensor!=MONOCULAR, activeLC); // mSensor!=MONOCULAR);
+    // 创建并开启闭环线程
+    mpLoopCloser = new LoopClosing(mpAtlas, mpKeyFrameDatabase, mpVocabulary, mSensor!=MONOCULAR, activeLC,mpPointCloudMapping); //todo 增加mpPointCloudMapping
     mptLoopClosing = new thread(&ORB_SLAM3::LoopClosing::Run, mpLoopCloser);
 
     //Set pointers between threads
+    // 设置线程间的指针
     mpTracker->SetLocalMapper(mpLocalMapper);
     mpTracker->SetLoopClosing(mpLoopCloser);
 
@@ -226,8 +259,9 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     //usleep(10*1000*1000);
 
     //Initialize the Viewer thread and launch
+    // 创建并开启显示线程
     if(bUseViewer)
-    //if(false) // TODO
+//    if(false)
     {
         mpViewer = new Viewer(this, mpFrameDrawer,mpMapDrawer,mpTracker,strSettingsFile,settings_);
         mptViewer = new thread(&Viewer::Run, mpViewer);
@@ -237,6 +271,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     }
 
     // Fix verbosity
+    // 打印输出中间的信息，设置为安静模式
     Verbose::SetTh(Verbose::VERBOSITY_QUIET);
 
 }
@@ -324,28 +359,39 @@ Sophus::SE3f System::TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, 
 
     return Tcw;
 }
-
-Sophus::SE3f System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp, const vector<IMU::Point>& vImuMeas, string filename)
+/**
+ * @brief notice RGBD VIO跟踪
+ *
+ * @param[in] im                灰度图像
+ * @param[in] depthmap          深度图
+ * @param[in] timestamp         RGB图像时间戳
+ * @param[in] vImuMeas          上一帧到当前帧图像之间的IMU测量值
+ * @param[in] filename          调试用的文件名  [ros接口中没有用到这个参数]
+ * @return Sophus::SE3f         当前帧位姿Tcw
+ */
+Sophus::SE3f System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp, const vector<IMU::Point> &vImuMeas, string filename)
 {
-    if(mSensor!=RGBD  && mSensor!=IMU_RGBD)
+    if(mSensor!=RGBD  && mSensor!=IMU_RGBD &&  mSensor != IMU_RGBD_KINEMATIC)
     {
         cerr << "ERROR: you called TrackRGBD but input sensor was not set to RGBD." << endl;
         exit(-1);
     }
-
+    // 将喂进来的图像数据 clone 一份
     cv::Mat imToFeed = im.clone();
     cv::Mat imDepthToFeed = depthmap.clone();
+
     if(settings_ && settings_->needToResize()){
         cv::Mat resizedIm;
         cv::resize(im,resizedIm,settings_->newImSize());
         imToFeed = resizedIm;
-
         cv::resize(depthmap,imDepthToFeed,settings_->newImSize());
-    }
+    }  // 这里是重新设置图片尺寸, 我们没有用到
 
     // Check mode change
     {
+        // 独占锁，主要是为了mbActivateLocalizationMode和mbDeactivateLocalizationMode不会发生混乱
         unique_lock<mutex> lock(mMutexMode);
+        // mbActivateLocalizationMode为true会关闭局部地图线程，仅跟踪模式
         if(mbActivateLocalizationMode)
         {
             mpLocalMapper->RequestStop();
@@ -355,9 +401,9 @@ Sophus::SE3f System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const
             {
                 usleep(1000);
             }
-
+            // 局部地图关闭以后，只进行追踪的线程，只计算相机的位姿，没有对局部地图进行更新
             mpTracker->InformOnlyTracking(true);
-            mbActivateLocalizationMode = false;
+            mbActivateLocalizationMode = false;// 关闭线程可以使得别的线程得到更多的资源
         }
         if(mbDeactivateLocalizationMode)
         {
@@ -372,31 +418,128 @@ Sophus::SE3f System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const
         unique_lock<mutex> lock(mMutexReset);
         if(mbReset)
         {
+            cout << "SYSTEM-> Reseting system" << endl;
             mpTracker->Reset();
             mbReset = false;
             mbResetActiveMap = false;
         }
-        else if(mbResetActiveMap)
+        else if(mbResetActiveMap) // 如果检测到重置活动地图的标志为true,将重置地图
         {
+            cout << "SYSTEM-> Reseting active map" << endl;
             mpTracker->ResetActiveMap();
             mbResetActiveMap = false;
         }
     }
-
+    // 处理IMU数据
     if (mSensor == System::IMU_RGBD)
         for(size_t i_imu = 0; i_imu < vImuMeas.size(); i_imu++)
             mpTracker->GrabImuData(vImuMeas[i_imu]);
-
+    // 处理图像数据, 顺便调用跟踪主函数
     Sophus::SE3f Tcw = mpTracker->GrabImageRGBD(imToFeed,imDepthToFeed,timestamp,filename);
+    // check 是否用到此函数   用到了
+    //    cout << "System: Rcw "<< Tcw.rotationMatrix() << endl;
 
-    unique_lock<mutex> lock2(mMutexState);
-    mTrackingState = mpTracker->mState;
-    mTrackedMapPoints = mpTracker->mCurrentFrame.mvpMapPoints;
+    // 更新跟踪状态和参数 从Track->System
+    unique_lock<mutex> lock2(mMutexState);   // 锁住当前系统状态
+    mTrackingState = mpTracker->mState;   // 当前跟踪状态 从Tracking -> System
+    mTrackedMapPoints = mpTracker->mCurrentFrame.mvpMapPoints;   // 当前帧的地图点 (用一个Vector存储很多地图点的指针)
     mTrackedKeyPointsUn = mpTracker->mCurrentFrame.mvKeysUn;
     return Tcw;
 }
 
-Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const double &timestamp, const vector<IMU::Point>& vImuMeas, string filename)
+// notice track RGBD-IMU-kinematic
+Sophus::SE3f System::TrackRGBD_kinematic(const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp,const vector<IMU::Point> &vImuMeas, const vector<Joint::Data> &vJointMeas, string filename)
+    {
+        if(mSensor!=RGBD  && mSensor!=IMU_RGBD  && mSensor!=IMU_RGBD_KINEMATIC )
+        {
+            cerr << "ERROR: you called TrackRGBD but input sensor was not set to RGBD." << endl;
+            exit(-1);
+        }
+        // 将喂进来的图像数据 clone 一份
+        cv::Mat imToFeed = im.clone();
+        cv::Mat imDepthToFeed = depthmap.clone();
+        /*//todo 检测数据
+        cout << "图像数据: " << " ";
+        cout<< "timestamps: "<< timestamp << endl;*/
+        if(settings_ && settings_->needToResize()){
+            cv::Mat resizedIm;
+            cv::resize(im,resizedIm,settings_->newImSize());
+            imToFeed = resizedIm;
+            cv::resize(depthmap,imDepthToFeed,settings_->newImSize());
+        }  // 这里是重新设置图片尺寸, 我们没有用到
+
+        // Check mode change
+        {
+            // 独占锁，主要是为了mbActivateLocalizationMode和mbDeactivateLocalizationMode不会发生混乱
+            unique_lock<mutex> lock(mMutexMode);
+            // mbActivateLocalizationMode为true会关闭局部地图线程，仅跟踪模式
+            if(mbActivateLocalizationMode)
+            {
+                mpLocalMapper->RequestStop();
+
+                // Wait until Local Mapping has effectively stopped
+                while(!mpLocalMapper->isStopped())
+                {
+                    usleep(1000);
+                }
+                // 局部地图关闭以后，只进行追踪的线程，只计算相机的位姿，没有对局部地图进行更新
+                mpTracker->InformOnlyTracking(true);
+                mbActivateLocalizationMode = false;// 关闭线程可以使得别的线程得到更多的资源
+            }
+            if(mbDeactivateLocalizationMode)
+            {
+                mpTracker->InformOnlyTracking(false);
+                mpLocalMapper->Release();
+                mbDeactivateLocalizationMode = false;
+            }
+        }
+
+        // Check reset
+        {
+            unique_lock<mutex> lock(mMutexReset);
+            if(mbReset)
+            {
+                cout << "SYSTEM-> Reseting system" << endl;
+                mpTracker->Reset();
+                mbReset = false;
+                mbResetActiveMap = false;
+            }
+            else if(mbResetActiveMap) // 如果检测到重置活动地图的标志为true,将重置地图
+            {
+                cout << "SYSTEM-> Reseting active map" << endl;
+                mpTracker->ResetActiveMap();
+                mbResetActiveMap = false;
+            }
+        }
+        // 处理IMU数据  // notice 新添加 处理关节数据
+        if (mSensor == System::IMU_RGBD_KINEMATIC){
+//            cout << "IMU数据: +++++++++++++++++++++++++++++++++++++++++++++++++++++++"<<endl;
+            for(size_t i_imu = 0; i_imu < vImuMeas.size(); i_imu++)
+                mpTracker->GrabImuData(vImuMeas[i_imu]);
+//            cout << "关节数据: +++++++++++++++++++++++++++++++++++++++++++++++++++++++"<<endl;
+            for(size_t i_joint = 0; i_joint < vJointMeas.size(); i_joint++){
+                mpTracker->GrabJointData(vJointMeas[i_joint]);
+            }
+          /*  // todo 检测数据
+            cout << "数据处理完成!+++++++++++++++++++++++++++++++++++++++++++++++++++++++"<<endl;*/
+        }
+
+        // 处理图像数据, 顺便调用跟踪主函数
+        Sophus::SE3f Tcw = mpTracker->GrabImageRGBD(imToFeed,imDepthToFeed,timestamp,filename);
+
+        // 更新跟踪状态和参数 从Track->System
+        unique_lock<mutex> lock2(mMutexState);   // 锁住当前系统状态
+        mTrackingState = mpTracker->mState;   // 当前跟踪状态 从Tracking -> System
+        mTrackedMapPoints = mpTracker->mCurrentFrame.mvpMapPoints;   // 当前帧的地图点 (用一个Vector存储很多地图点的指针)
+        mTrackedKeyPointsUn = mpTracker->mCurrentFrame.mvKeysUn;   // 特征点
+        return Tcw;
+    }
+
+
+
+
+
+    Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const double &timestamp, const vector<IMU::Point>& vImuMeas, string filename)
 {
 
     {
@@ -523,27 +666,8 @@ void System::Shutdown()
 
     mpLocalMapper->RequestFinish();
     mpLoopCloser->RequestFinish();
-    /*if(mpViewer)
-    {
-        mpViewer->RequestFinish();
-        while(!mpViewer->isFinished())
-            usleep(5000);
-    }*/
+    mpPointCloudMapping->shutdown();   // todo new mpPointCloudMapping
 
-    // Wait until all thread have effectively stopped
-    /*while(!mpLocalMapper->isFinished() || !mpLoopCloser->isFinished() || mpLoopCloser->isRunningGBA())
-    {
-        if(!mpLocalMapper->isFinished())
-            cout << "mpLocalMapper is not finished" << endl;*/
-        /*if(!mpLoopCloser->isFinished())
-            cout << "mpLoopCloser is not finished" << endl;
-        if(mpLoopCloser->isRunningGBA()){
-            cout << "mpLoopCloser is running GBA" << endl;
-            cout << "break anyway..." << endl;
-            break;
-        }*/
-        /*usleep(5000);
-    }*/
 
     if(!mStrSaveAtlasToFile.empty())
     {
@@ -551,8 +675,6 @@ void System::Shutdown()
         SaveAtlas(FileType::BINARY_FILE);
     }
 
-    /*if(mpViewer)
-        pangolin::BindToContext("ORB-SLAM2: Map Viewer");*/
 
 #ifdef REGISTER_TIMES
     mpTracker->PrintTimeStats();
@@ -583,7 +705,7 @@ void System::SaveTrajectoryTUM(const string &filename)
     Sophus::SE3f Two = vpKFs[0]->GetPoseInverse();
 
     ofstream f;
-    f.open(filename.c_str());
+    f.open("/home/lenajin/Documents/mycode/my_ORB3_modifying/dataset/"+filename);
     f << fixed;
 
     // Frame pose is stored relative to its reference keyframe (which is optimized by BA and pose graph).
@@ -636,7 +758,7 @@ void System::SaveKeyFrameTrajectoryTUM(const string &filename)
     // Transform all keyframes so that the first keyframe is at the origin.
     // After a loop closure the first keyframe might not be at the origin.
     ofstream f;
-    f.open(filename.c_str());
+    f.open("/home/lenajin/Documents/my_ORB3_modifying/dataset/"+filename); // notice 轨迹保存位置
     f << fixed;
 
     for(size_t i=0; i<vpKFs.size(); i++)
@@ -656,6 +778,38 @@ void System::SaveKeyFrameTrajectoryTUM(const string &filename)
 
     }
 
+    f.close();
+}
+
+void System::SaveKeyFrameTrajectoryTUM_BA2(const string &filename){
+    cout << endl << "Saving keyframe trajectory to " << filename << " ..." << endl;
+
+    vector<KeyFrame*> vpKFs = mpAtlas->GetAllKeyFrames();
+    sort(vpKFs.begin(),vpKFs.end(),KeyFrame::lId);
+
+    // Transform all keyframes so that the first keyframe is at the origin.
+    // After a loop closure the first keyframe might not be at the origin.
+    ofstream f;
+    f.open("/home/lenajin/Documents/mycode/my_ORB3_modifying/dataset/"+filename);
+    f << fixed;
+
+    for(size_t i=0; i<vpKFs.size(); i++)
+    {
+        KeyFrame* pKF = vpKFs[i];
+
+        // pKF->SetPose(pKF->GetPose()*Two);
+
+        if(pKF->isBad())
+            continue;
+
+        if(pKF->FirstBA2Finished){
+            Sophus::SE3f Twc = pKF->GetPoseInverse();
+            Eigen::Quaternionf q = Twc.unit_quaternion();
+            Eigen::Vector3f t = Twc.translation();
+            f << setprecision(6) << pKF->mTimeStamp << setprecision(7) << " " << t(0) << " " << t(1) << " " << t(2)
+              << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << endl;
+        }
+    }
     f.close();
 }
 
@@ -689,7 +843,7 @@ void System::SaveTrajectoryEuRoC(const string &filename)
     // Transform all keyframes so that the first keyframe is at the origin.
     // After a loop closure the first keyframe might not be at the origin.
     Sophus::SE3f Twb; // Can be word to cam0 or world to b depending on IMU or not.
-    if (mSensor==IMU_MONOCULAR || mSensor==IMU_STEREO || mSensor==IMU_RGBD)
+    if (mSensor==IMU_MONOCULAR || mSensor==IMU_STEREO || mSensor==IMU_RGBD || mSensor == System::IMU_RGBD_KINEMATIC)
         Twb = vpKFs[0]->GetImuPose();
     else
         Twb = vpKFs[0]->GetPoseInverse();
@@ -754,7 +908,7 @@ void System::SaveTrajectoryEuRoC(const string &filename)
 
         // cout << "4" << endl;
 
-        if (mSensor == IMU_MONOCULAR || mSensor == IMU_STEREO || mSensor==IMU_RGBD)
+        if (mSensor == IMU_MONOCULAR || mSensor == IMU_STEREO || mSensor==IMU_RGBD || mSensor == System::IMU_RGBD_KINEMATIC)
         {
             Sophus::SE3f Twb = (pKF->mImuCalib.mTbc * (*lit) * Trw).inverse();
             Eigen::Quaternionf q = Twb.unit_quaternion();
@@ -794,7 +948,7 @@ void System::SaveTrajectoryEuRoC(const string &filename, Map* pMap)
     // Transform all keyframes so that the first keyframe is at the origin.
     // After a loop closure the first keyframe might not be at the origin.
     Sophus::SE3f Twb; // Can be word to cam0 or world to b dependingo on IMU or not.
-    if (mSensor==IMU_MONOCULAR || mSensor==IMU_STEREO || mSensor==IMU_RGBD)
+    if (mSensor==IMU_MONOCULAR || mSensor==IMU_STEREO || mSensor==IMU_RGBD || mSensor == System::IMU_RGBD_KINEMATIC)
         Twb = vpKFs[0]->GetImuPose();
     else
         Twb = vpKFs[0]->GetPoseInverse();
@@ -859,7 +1013,7 @@ void System::SaveTrajectoryEuRoC(const string &filename, Map* pMap)
 
         // cout << "4" << endl;
 
-        if (mSensor == IMU_MONOCULAR || mSensor == IMU_STEREO || mSensor==IMU_RGBD)
+        if (mSensor == IMU_MONOCULAR || mSensor == IMU_STEREO || mSensor==IMU_RGBD || mSensor == System::IMU_RGBD_KINEMATIC)
         {
             Sophus::SE3f Twb = (pKF->mImuCalib.mTbc * (*lit) * Trw).inverse();
             Eigen::Quaternionf q = Twb.unit_quaternion();
@@ -1093,7 +1247,7 @@ void System::SaveKeyFrameTrajectoryEuRoC(const string &filename)
 
         if(!pKF || pKF->isBad())
             continue;
-        if (mSensor == IMU_MONOCULAR || mSensor == IMU_STEREO || mSensor==IMU_RGBD)
+        if (mSensor == IMU_MONOCULAR || mSensor == IMU_STEREO || mSensor==IMU_RGBD || mSensor == System::IMU_RGBD_KINEMATIC)
         {
             Sophus::SE3f Twb = pKF->GetImuPose();
             Eigen::Quaternionf q = Twb.unit_quaternion();
@@ -1131,7 +1285,7 @@ void System::SaveKeyFrameTrajectoryEuRoC(const string &filename, Map* pMap)
 
         if(!pKF || pKF->isBad())
             continue;
-        if (mSensor == IMU_MONOCULAR || mSensor == IMU_STEREO || mSensor==IMU_RGBD)
+        if (mSensor == IMU_MONOCULAR || mSensor == IMU_STEREO || mSensor==IMU_RGBD || mSensor == System::IMU_RGBD_KINEMATIC)
         {
             Sophus::SE3f Twb = pKF->GetImuPose();
             Eigen::Quaternionf q = Twb.unit_quaternion();
@@ -1425,7 +1579,7 @@ void System::SaveAtlas(int type){
 
             oa << strVocabularyName;
             oa << strVocabularyChecksum;
-            oa << mpAtlas;
+//            oa << mpAtlas;
             cout << "End to write the save text file" << endl;
         }
         else if(type == BINARY_FILE) // File binary
@@ -1436,7 +1590,7 @@ void System::SaveAtlas(int type){
             boost::archive::binary_oarchive oa(ofs);
             oa << strVocabularyName;
             oa << strVocabularyChecksum;
-            oa << mpAtlas;
+//            oa << mpAtlas;
             cout << "End to write save binary file" << endl;
         }
     }
@@ -1463,7 +1617,7 @@ bool System::LoadAtlas(int type)
         boost::archive::text_iarchive ia(ifs);
         ia >> strFileVoc;
         ia >> strVocChecksum;
-        ia >> mpAtlas;
+//        ia >> mpAtlas;
         cout << "End to load the save text file " << endl;
         isRead = true;
     }
@@ -1479,7 +1633,7 @@ bool System::LoadAtlas(int type)
         boost::archive::binary_iarchive ia(ifs);
         ia >> strFileVoc;
         ia >> strVocChecksum;
-        ia >> mpAtlas;
+//        ia >> mpAtlas;
         cout << "End to load the save binary file" << endl;
         isRead = true;
     }
@@ -1543,6 +1697,20 @@ string System::CalculateCheckSum(string filename, int type)
     }
 
     return checksum;
+}
+
+// todo new function*3
+void System::save()
+{
+    mpPointCloudMapping->save();
+
+}
+
+
+
+int System::getloopcount()
+{
+    return mpLoopCloser->loopcount;
 }
 
 } //namespace ORB_SLAM

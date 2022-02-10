@@ -20,6 +20,8 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
+#define URDF_PATH "/home/lenajin/workspace/fk_ros/src/gtx3_description/urdf/gtx3_description.urdf"
+
 
 #include <unistd.h>
 #include<stdio.h>
@@ -39,6 +41,8 @@
 #include "Viewer.h"
 #include "ImuTypes.h"
 #include "Settings.h"
+#include "forward_kinematics.h"
+
 
 
 namespace ORB_SLAM3
@@ -91,6 +95,7 @@ public:
         IMU_MONOCULAR=3,
         IMU_STEREO=4,
         IMU_RGBD=5,
+        IMU_RGBD_KINEMATIC=6,
     };
 
     // File type
@@ -114,6 +119,7 @@ public:
     // Input depthmap: Float (CV_32F).
     // Returns the camera pose (empty if tracking fails).
     Sophus::SE3f TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp, const vector<IMU::Point>& vImuMeas = vector<IMU::Point>(), string filename="");
+    Sophus::SE3f TrackRGBD_kinematic(const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp,const vector<IMU::Point>& vImuMeas = vector<IMU::Point>(),const vector<Joint::Data>& vJointMeas = vector<Joint::Data>(),string filename="");
 
     // Proccess the given monocular frame and optionally imu data
     // Input images: RGB (CV_8UC3) or grayscale (CV_8U). RGB is converted to grayscale.
@@ -151,6 +157,7 @@ public:
     // Call first Shutdown()
     // See format details at: http://vision.in.tum.de/data/datasets/rgbd-dataset
     void SaveKeyFrameTrajectoryTUM(const string &filename);
+    void SaveKeyFrameTrajectoryTUM_BA2(const string &filename);
 
     void SaveTrajectoryEuRoC(const string &filename);
     void SaveKeyFrameTrajectoryEuRoC(const string &filename);
@@ -209,7 +216,7 @@ private:
     KeyFrameDatabase* mpKeyFrameDatabase;
 
     // Map structure that stores the pointers to all KeyFrames and MapPoints.
-    //Map* mpMap;
+//    Map* mpMap;
     Atlas* mpAtlas;
 
     // Tracker. It receives a frame and computes the associated camera pose.
@@ -229,6 +236,7 @@ private:
 
     FrameDrawer* mpFrameDrawer;
     MapDrawer* mpMapDrawer;
+
 
     // System threads: Local Mapping, Loop Closing, Viewer.
     // The Tracking thread "lives" in the main execution thread that creates the System object.

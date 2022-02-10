@@ -20,6 +20,7 @@
 #ifndef IMUTYPES_H
 #define IMUTYPES_H
 
+#include <iostream>
 #include <vector>
 #include <utility>
 #include <opencv2/core/core.hpp>
@@ -46,14 +47,15 @@ const float GRAVITY_VALUE=9.81;
 class Point
 {
 public:
+    // 定义了两种Point 的赋值方式, 一种是直接传入6个数据, 后一种是直接传入两个向量和一个时间值是
     Point(const float &acc_x, const float &acc_y, const float &acc_z,
              const float &ang_vel_x, const float &ang_vel_y, const float &ang_vel_z,
              const double &timestamp): a(acc_x,acc_y,acc_z), w(ang_vel_x,ang_vel_y,ang_vel_z), t(timestamp){}
     Point(const cv::Point3f Acc, const cv::Point3f Gyro, const double &timestamp):
         a(Acc.x,Acc.y,Acc.z), w(Gyro.x,Gyro.y,Gyro.z), t(timestamp){}
 public:
-    Eigen::Vector3f a;
-    Eigen::Vector3f w;
+    Eigen::Vector3f a;  // 加速度
+    Eigen::Vector3f w;  // 角速度
     double t;
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
@@ -126,6 +128,7 @@ public:
 };
 
 //Integration of 1 gyro measurement
+// 这个类是为了根据角速度计算deltaR(单位时间内的旋转量)以及相应的右乘雅克比rightJ
 class IntegratedRotation
 {
 public:
@@ -140,6 +143,7 @@ public:
 };
 
 //Preintegration of Imu Measurements
+// 预积分类
 class Preintegrated
 {
     friend class boost::serialization::access;
@@ -170,7 +174,7 @@ class Preintegrated
 
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    Preintegrated(const Bias &b_, const Calib &calib);
+    Preintegrated(const Bias &b_, const Calib &calib);  //构造函数
     Preintegrated(Preintegrated* pImuPre);
     Preintegrated() {}
     ~Preintegrated() {}

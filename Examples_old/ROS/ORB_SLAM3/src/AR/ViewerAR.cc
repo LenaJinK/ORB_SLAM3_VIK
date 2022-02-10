@@ -24,6 +24,10 @@
 #include <thread>
 #include <cstdlib>
 
+#include <Eigen/Dense>
+#include <opencv2/core/eigen.hpp>
+
+
 using namespace std;
 
 namespace ORB_SLAM3

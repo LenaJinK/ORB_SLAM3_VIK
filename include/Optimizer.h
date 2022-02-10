@@ -60,6 +60,9 @@ public:
     int static PoseInertialOptimizationLastKeyFrame(Frame* pFrame, bool bRecInit = false);
     int static PoseInertialOptimizationLastFrame(Frame *pFrame, bool bRecInit = false);
 
+    int static PoseInertialKinematicOptimizationLastKeyFrame(Frame* pFrame, bool bRecInit = false);
+    int static PoseInertialKinematicOptimizationLastFrame(Frame *pFrame, bool bRecInit = false);
+
     // if bFixScale is true, 6DoF optimization (stereo,rgbd), 7DoF otherwise (mono)
     void static OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* pCurKF,
                                        const LoopClosing::KeyFrameAndPose &NonCorrectedSim3,

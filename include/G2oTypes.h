@@ -30,6 +30,7 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <Eigen/Dense>
+#include <sophus/se3.hpp>
 
 #include <Frame.h>
 #include <KeyFrame.h>
@@ -56,6 +57,7 @@ Eigen::Matrix3d ExpSO3(const double x, const double y, const double z);
 Eigen::Matrix3d ExpSO3(const Eigen::Vector3d &w);
 
 Eigen::Vector3d LogSO3(const Eigen::Matrix3d &R);
+Vector6d LogSE3(const Sophus::SE3d &T);
 
 Eigen::Matrix3d InverseRightJacobianSO3(const Eigen::Vector3d &v);
 Eigen::Matrix3d RightJacobianSO3(const Eigen::Vector3d &v);
@@ -80,11 +82,14 @@ public:
     ImuCamPose(Frame* pF);
     ImuCamPose(Eigen::Matrix3d &_Rwc, Eigen::Vector3d &_twc, KeyFrame* pKF);
 
-    void SetParam(const std::vector<Eigen::Matrix3d> &_Rcw, const std::vector<Eigen::Vector3d> &_tcw, const std::vector<Eigen::Matrix3d> &_Rbc,
-                  const std::vector<Eigen::Vector3d> &_tbc, const double &_bf);
+    void SetParam(const std::vector<Eigen::Matrix3d,Eigen::aligned_allocator<Eigen::Matrix3d>> &_Rcw,
+                  const std::vector<Eigen::Vector3d,Eigen::aligned_allocator<Eigen::Vector3d>> &_tcw,
+                  const std::vector<Eigen::Matrix3d,Eigen::aligned_allocator<Eigen::Matrix3d>> &_Rbc,
+                  const std::vector<Eigen::Vector3d,Eigen::aligned_allocator<Eigen::Vector3d>> &_tbc, const double &_bf);   // todo 参数设置
 
     void Update(const double *pu); // update in the imu reference
     void UpdateW(const double *pu); // update in the world reference
+
     Eigen::Vector2d Project(const Eigen::Vector3d &Xw, int cam_idx=0) const; // Mono
     Eigen::Vector3d ProjectStereo(const Eigen::Vector3d &Xw, int cam_idx=0) const; // Stereo
     bool isDepthPositive(const Eigen::Vector3d &Xw, int cam_idx=0) const;
@@ -94,11 +99,17 @@ public:
     Eigen::Matrix3d Rwb;
     Eigen::Vector3d twb;
 
+    // todo param for kinematic & COM
+    Eigen::Matrix3d Rwcom;
+    Eigen::Vector3d twcom;
+    std::vector<Eigen::Matrix3d,Eigen::aligned_allocator<Eigen::Matrix3d>> Rccom,Rcomc;
+    std::vector<Eigen::Vector3d,Eigen::aligned_allocator<Eigen::Vector3d>> tccom,tcomc;
+
     // For set of cameras
-    std::vector<Eigen::Matrix3d> Rcw;
-    std::vector<Eigen::Vector3d> tcw;
-    std::vector<Eigen::Matrix3d> Rcb, Rbc;
-    std::vector<Eigen::Vector3d> tcb, tbc;
+    std::vector<Eigen::Matrix3d,Eigen::aligned_allocator<Eigen::Matrix3d>> Rcw;
+    std::vector<Eigen::Vector3d,Eigen::aligned_allocator<Eigen::Vector3d>> tcw;
+    std::vector<Eigen::Matrix3d,Eigen::aligned_allocator<Eigen::Matrix3d>> Rcb, Rbc;
+    std::vector<Eigen::Vector3d,Eigen::aligned_allocator<Eigen::Vector3d>> tcb,tbc;
     double bf;
     std::vector<GeometricCamera*> pCamera;
 
@@ -118,7 +129,7 @@ public:
 
     void Update(const double *pu);
 
-    double rho;
+    double rho;  // todo?
     double u, v; // they are not variables, observation in the host frame
 
     double fx, fy, cx, cy, bf; // from host frame
@@ -147,7 +158,7 @@ public:
         }
 
     virtual void oplusImpl(const double* update_){
-        _estimate.Update(update_);
+        _estimate.Update(update_);   // todo 位姿更新
         updateCache();
     }
 };
@@ -350,7 +361,7 @@ public:
     virtual bool read(std::istream& is){return false;}
     virtual bool write(std::ostream& os) const{return false;}
 
-    void computeError(){
+    void computeError(){  // 先添加地图点再添加位姿
         const g2o::VertexSBAPointXYZ* VPoint = static_cast<const g2o::VertexSBAPointXYZ*>(_vertices[0]);
         const VertexPose* VPose = static_cast<const VertexPose*>(_vertices[1]);
         const Eigen::Vector2d obs(_measurement);
@@ -370,8 +381,8 @@ public:
     Eigen::Matrix<double,2,9> GetJacobian(){
         linearizeOplus();
         Eigen::Matrix<double,2,9> J;
-        J.block<2,3>(0,0) = _jacobianOplusXi;
-        J.block<2,6>(0,3) = _jacobianOplusXj;
+        J.block<2,3>(0,0) = _jacobianOplusXi;  // 对坐标点的倒数
+        J.block<2,6>(0,3) = _jacobianOplusXj;  // 对位姿的导数
         return J;
     }
 
@@ -397,11 +408,11 @@ public:
 
     virtual bool read(std::istream& is){return false;}
     virtual bool write(std::ostream& os) const{return false;}
-
+    // 重投影误差
     void computeError(){
         const VertexPose* VPose = static_cast<const VertexPose*>(_vertices[0]);
         const Eigen::Vector2d obs(_measurement);
-        _error = obs - VPose->estimate().Project(Xw,cam_idx);
+        _error = obs - VPose->estimate().Project(Xw,cam_idx);// 观测-预测
     }
 
     virtual void linearizeOplus();
@@ -492,6 +503,42 @@ public:
     const int cam_idx;
 };
 
+// todo
+class EdgeKinematic : public g2o::BaseBinaryEdge<6,Vector6d,VertexPose,VertexPose>{
+public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    EdgeKinematic(Joint::ForwardKinematics* pInt):mpInt(pInt){
+        mpInt->ComputeTij();
+        mT12 = mpInt->Tij.cast<double>();
+    }
+
+    virtual bool read(std::istream& is){return false;}
+    virtual bool write(std::ostream& os) const{return false;}
+
+    void computeError();
+    virtual void linearizeOplus();
+
+    Eigen::Matrix<double,12,12> GetHessian(){
+        linearizeOplus();
+        Eigen::Matrix<double,6,12> J;
+        J.block<6,6>(0,0) = _jacobianOplusXi;   // todo
+        J.block<6,6>(0,6) = _jacobianOplusXj;
+        return J.transpose()*information()*J;  // todo information
+    }
+    Eigen::Matrix<double,6,6> GetHessian2(){
+        linearizeOplus();
+        Eigen::Matrix<double,6,6> J;
+        J.block<6,6>(0,0) = _jacobianOplusXj;
+        return J.transpose()*information()*J;  // todo information
+    }
+
+    Joint::ForwardKinematics* mpInt;
+    Sophus::SE3d mT12;
+
+
+};
+
+
 class EdgeInertial : public g2o::BaseMultiEdge<9,Vector9d>
 {
 public:
@@ -542,6 +589,7 @@ public:
     const double dt;
     Eigen::Vector3d g;
 };
+
 
 
 // Edge inertial whre gravity is included as optimizable variable and it is not supposed to be pointing in -z axis, as well as scale
@@ -702,7 +750,8 @@ public:
         return _jacobianOplusXj.transpose()*information()*_jacobianOplusXj;
     }
 };
-
+/**
+ * @brief 先验*/
 class ConstraintPoseImu
 {
 public:
@@ -712,7 +761,8 @@ public:
                        const Eigen::Vector3d &bg_, const Eigen::Vector3d &ba_, const Matrix15d &H_):
                        Rwb(Rwb_), twb(twb_), vwb(vwb_), bg(bg_), ba(ba_), H(H_)
     {
-        H = (H+H)/2;
+        H = (H+H)/2; // 对称化
+        // 令特征值小的位置变为0
         Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double,15,15> > es(H);
         Eigen::Matrix<double,15,1> eigs = es.eigenvalues();
         for(int i=0;i<15;i++)
@@ -744,10 +794,10 @@ public:
         Eigen::Matrix<double,15,15> GetHessian(){
             linearizeOplus();
             Eigen::Matrix<double,15,15> J;
-            J.block<15,6>(0,0) = _jacobianOplus[0];
-            J.block<15,3>(0,6) = _jacobianOplus[1];
-            J.block<15,3>(0,9) = _jacobianOplus[2];
-            J.block<15,3>(0,12) = _jacobianOplus[3];
+            J.block<15,6>(0,0) = _jacobianOplus[0];//pose
+            J.block<15,3>(0,6) = _jacobianOplus[1];//v
+            J.block<15,3>(0,9) = _jacobianOplus[2];//b
+            J.block<15,3>(0,12) = _jacobianOplus[3];//b
             return J.transpose()*information()*J;
         }
 

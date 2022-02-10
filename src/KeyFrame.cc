@@ -26,7 +26,7 @@ namespace ORB_SLAM3
 
 long unsigned int KeyFrame::nNextId=0;
 
-KeyFrame::KeyFrame():
+KeyFrame::KeyFrame():  //todo 构造函数中新增状态量
         mnFrameId(0),  mTimeStamp(0), mnGridCols(FRAME_GRID_COLS), mnGridRows(FRAME_GRID_ROWS),
         mfGridElementWidthInv(0), mfGridElementHeightInv(0),
         mnTrackReferenceForFrame(0), mnFuseTargetForKF(0), mnBALocalForKF(0), mnBAFixedForKF(0), mnBALocalForMerge(0),
@@ -37,12 +37,12 @@ KeyFrame::KeyFrame():
         mfLogScaleFactor(0), mvScaleFactors(0), mvLevelSigma2(0), mvInvLevelSigma2(0), mnMinX(0), mnMinY(0), mnMaxX(0),
         mnMaxY(0), mPrevKF(static_cast<KeyFrame*>(NULL)), mNextKF(static_cast<KeyFrame*>(NULL)), mbFirstConnection(true), mpParent(NULL), mbNotErase(false),
         mbToBeErased(false), mbBad(false), mHalfBaseline(0), mbCurrentPlaceRecognition(false), mnMergeCorrectedForKF(0),
-        NLeft(0),NRight(0), mnNumberOfOpt(0), mbHasVelocity(false)
+        NLeft(0),NRight(0), mnNumberOfOpt(0), mbHasVelocity(false),FirstBA2Finished(false)
 {
 
 }
-
-KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
+// todo include Tbc
+KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB): //todo 构造函数中新增状态量
     bImu(pMap->isImuInitialized()), mnFrameId(F.mnId),  mTimeStamp(F.mTimeStamp), mnGridCols(FRAME_GRID_COLS), mnGridRows(FRAME_GRID_ROWS),
     mfGridElementWidthInv(F.mfGridElementWidthInv), mfGridElementHeightInv(F.mfGridElementHeightInv),
     mnTrackReferenceForFrame(0), mnFuseTargetForKF(0), mnBALocalForKF(0), mnBAFixedForKF(0), mnBALocalForMerge(0),
@@ -59,7 +59,8 @@ KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
     mbToBeErased(false), mbBad(false), mHalfBaseline(F.mb/2), mpMap(pMap), mbCurrentPlaceRecognition(false), mNameFile(F.mNameFile), mnMergeCorrectedForKF(0),
     mpCamera(F.mpCamera), mpCamera2(F.mpCamera2),
     mvLeftToRightMatch(F.mvLeftToRightMatch),mvRightToLeftMatch(F.mvRightToLeftMatch), mTlr(F.GetRelativePoseTlr()),
-    mvKeysRight(F.mvKeysRight), NLeft(F.Nleft), NRight(F.Nright), mTrl(F.GetRelativePoseTrl()), mnNumberOfOpt(0), mbHasVelocity(false)
+    mvKeysRight(F.mvKeysRight), NLeft(F.Nleft), NRight(F.Nright), mTrl(F.GetRelativePoseTrl()), mnNumberOfOpt(0), mbHasVelocity(false),FirstBA2Finished(false),
+    mJointCalib(F.mJointCalib)
 {
     mnId=nNextId++;
 
@@ -93,6 +94,7 @@ KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
     SetPose(F.GetPose());
 
     mnOriginMapId = pMap->GetId();
+
 }
 
 void KeyFrame::ComputeBoW()
@@ -118,6 +120,10 @@ void KeyFrame::SetPose(const Sophus::SE3f &Tcw)
     if (mImuCalib.mbIsSet) // TODO Use a flag instead of the OpenCV matrix
     {
         mOwb = mRwc * mImuCalib.mTcb.translation() + mTwc.translation();
+    }
+    if(mJointCalib.mbIsSet){  // todo 如果存在关节数据，计算从质心到相机的外参
+        mRwcom = mRwc*mJointCalib.mTccom.rotationMatrix();
+        mtwcom = mRwc*mJointCalib.mTccom.translation()+mTwc.translation();
     }
 }
 
@@ -155,6 +161,17 @@ Eigen::Matrix3f KeyFrame::GetImuRotation()
 {
     unique_lock<mutex> lock(mMutexPose);
     return (mTwc * mImuCalib.mTcb).rotationMatrix();
+}
+
+Eigen::Vector3f KeyFrame::GetCoMPosition(){
+    unique_lock<mutex> lock(mMutexPose);
+//    mtwcom = (mTwc * mJointCalib.mTccom).translation();
+    return mtwcom;// todo get com pose
+}
+Eigen::Matrix3f KeyFrame::GetCoMRotation() {
+    unique_lock<mutex> lock(mMutexPose);
+
+    return mRwcom;
 }
 
 Sophus::SE3f KeyFrame::GetImuPose()

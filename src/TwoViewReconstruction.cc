@@ -228,11 +228,15 @@ namespace ORB_SLAM3
             }
         }
     }
-
+/**
+ * @brief 用DLT方法求解单应矩阵 H
+ * @param vP1 参考帧中归一化后的特征点
+ * @param vP2 当前帧中归一化后的特征点
+ * @return H 计算的单应矩阵 H  */
     Eigen::Matrix3f TwoViewReconstruction::ComputeH21(const vector<cv::Point2f> &vP1, const vector<cv::Point2f> &vP2)
     {
         const int N = vP1.size();
-
+        // 构造矩阵A
         Eigen::MatrixXf A(2*N, 9);
 
         for(int i=0; i<N; i++)
@@ -263,14 +267,15 @@ namespace ORB_SLAM3
             A(2*i+1,8) = -u2;
 
         }
-
+        // 对A SVD分解
         Eigen::JacobiSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeFullV);
-
+        // V的最后一列就是 Ah=0 最优解
         Eigen::Matrix<float,3,3,Eigen::RowMajor> H(svd.matrixV().col(8).data());
 
         return H;
     }
-
+/**
+ * @brief 求解基础矩阵 F */
     Eigen::Matrix3f TwoViewReconstruction::ComputeF21(const vector<cv::Point2f> &vP1,const vector<cv::Point2f> &vP2)
     {
         const int N = vP1.size();
@@ -296,9 +301,9 @@ namespace ORB_SLAM3
         }
 
         Eigen::JacobiSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeFullU | Eigen::ComputeFullV);
-
+        // A 的 SVD分解,V的最后一列
         Eigen::Matrix<float,3,3,Eigen::RowMajor> Fpre(svd.matrixV().col(8).data());
-
+        // 对F二次SVD分解
         Eigen::JacobiSVD<Eigen::Matrix3f> svd2(Fpre, Eigen::ComputeFullU | Eigen::ComputeFullV);
 
         Eigen::Vector3f w = svd2.singularValues();
@@ -306,7 +311,8 @@ namespace ORB_SLAM3
 
         return svd2.matrixU() * Eigen::DiagonalMatrix<float,3>(w) * svd2.matrixV().transpose();
     }
-
+/**
+ * @brief 对给定的单应矩阵计算双向头影误差并进行打分*/
     float TwoViewReconstruction::CheckHomography(const Eigen::Matrix3f &H21, const Eigen::Matrix3f &H12, vector<bool> &vbMatchesInliers, float sigma)
     {
         const int N = mvMatches12.size();
@@ -391,7 +397,9 @@ namespace ORB_SLAM3
 
         return score;
     }
-
+/**
+ * @brief 检查F矩阵的得分,选择的分最高的点
+ * */
     float TwoViewReconstruction::CheckFundamental(const Eigen::Matrix3f &F21, vector<bool> &vbMatchesInliers, float sigma)
     {
         const int N = mvMatches12.size();
@@ -733,7 +741,9 @@ namespace ORB_SLAM3
         return false;
     }
 
-
+/**
+ * @brief 将特征点归一化到同意尺度
+ * */
     void TwoViewReconstruction::Normalize(const vector<cv::KeyPoint> &vKeys, vector<cv::Point2f> &vNormalizedPoints, Eigen::Matrix3f &T)
     {
         float meanX = 0;
@@ -782,7 +792,9 @@ namespace ORB_SLAM3
         T(1,2) = -meanY*sY;
         T(2,2) = 1.f;
     }
-
+/**
+ * @brief 用位姿来对特征匹配点三角化,从中筛选合格的三维点
+ * */
     int TwoViewReconstruction::CheckRT(const Eigen::Matrix3f &R, const Eigen::Vector3f &t, const vector<cv::KeyPoint> &vKeys1, const vector<cv::KeyPoint> &vKeys2,
                                        const vector<Match> &vMatches12, vector<bool> &vbMatchesInliers,
                                        const Eigen::Matrix3f &K, vector<cv::Point3f> &vP3D, float th2, vector<bool> &vbGood, float &parallax)

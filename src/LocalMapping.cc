@@ -30,11 +30,21 @@
 namespace ORB_SLAM3
 {
 
-LocalMapping::LocalMapping(System* pSys, Atlas *pAtlas, const float bMonocular, bool bInertial, const string &_strSeqName):
+LocalMapping::LocalMapping(System* pSys, Atlas *pAtlas, bool bMonocular, bool bInertial, const string &_strSeqName):
     mpSystem(pSys), mbMonocular(bMonocular), mbInertial(bInertial), mbResetRequested(false), mbResetRequestedActiveMap(false), mbFinishRequested(false), mbFinished(true), mpAtlas(pAtlas), bInitializing(false),
     mbAbortBA(false), mbStopped(false), mbStopRequested(false), mbNotStop(false), mbAcceptKeyFrames(true),
     mIdxInit(0), mScale(1.0), mInitSect(0), mbNotBA1(true), mbNotBA2(true), mIdxIteration(0), infoInertial(Eigen::MatrixXd::Zero(9,9))
 {
+    /*参数说明:
+     * mbStopRequested:    外部线程调用，为true，表示外部线程请求停止 local mapping
+     * mbStopped:          为true表示可以并终止localmapping 线程
+     * mbNotStop:          true，表示不要停止 localmapping 线程，因为要插入关键帧了。需要和 mbStopped 结合使用
+     * mbAcceptKeyFrames:  true，允许接受关键帧。tracking 和local mapping 之间的关键帧调度
+     * mbAbortBA:          是否流产BA优化的标志位
+     * mbFinishRequested:  请求终止当前线程的标志。注意只是请求，不一定终止。终止要看 mbFinished
+     * mbResetRequested:   请求当前线程复位的标志。true，表示一直请求复位，但复位还未完成；表示复位完成为false
+     * mbFinished:         判断最终LocalMapping::Run() 是否完成的标志。
+     */
     mnMatchesInliers = 0;
 
     mbBadImu = false;
@@ -61,13 +71,21 @@ void LocalMapping::SetTracker(Tracking *pTracker)
     mpTracker=pTracker;
 }
 
+
+/**
+ * @brief 局部地图线程主函数
+ */
 void LocalMapping::Run()
 {
+    // Notice 标记状态，表示当前run函数正在运行，尚未结束
     mbFinished = false;
 
+    // 主循环
     while(1)
     {
         // Tracking will see that Local Mapping is busy
+        // Step 1 告诉Tracking，LocalMapping正处于繁忙状态，请不要给我发送关键帧打扰我
+        // LocalMapping线程处理的关键帧都是Tracking线程发过来的
         SetAcceptKeyFrames(false);
 
         // Check if there are keyframes in the queue
@@ -146,15 +164,19 @@ void LocalMapping::Run()
                         }
 
                         bool bLarge = ((mpTracker->GetMatchesInliers()>75)&&mbMonocular)||((mpTracker->GetMatchesInliers()>100)&&!mbMonocular);
+                        // todo 测试LocalInertialBA (IMU 初始化成功的时候使用此函数)
+                        cout<< "LM: LocalInertialBA start ............................................."<<endl;
                         Optimizer::LocalInertialBA(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
+                        cout<< "LM: LocalInertialBA end ............................................."<<endl;
                         b_doneLBA = true;
                     }
                     else
                     {
+                        cout<< "LM: LocalBundleAdjustment start ............................................."<<endl;
                         Optimizer::LocalBundleAdjustment(mpCurrentKeyFrame,&mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA);
+                        cout<< "LM: LocalBundleAdjustment end ............................................."<<endl;
                         b_doneLBA = true;
                     }
-
                 }
 #ifdef REGISTER_TIMES
                 std::chrono::steady_clock::time_point time_EndLBA = std::chrono::steady_clock::now();
@@ -177,7 +199,7 @@ void LocalMapping::Run()
 
 #endif
 
-                // Initialize IMU here
+                // notice Initialize IMU here
                 if(!mpCurrentKeyFrame->GetMap()->isImuInitialized() && mbInertial)
                 {
                     if (mbMonocular)
@@ -224,6 +246,7 @@ void LocalMapping::Run()
                                     InitializeIMU(0.f, 0.f, true);
 
                                 cout << "end VIBA 2" << endl;
+                                cout << "completely Initialed ==================================================================================" << endl;  //todo check initialization
                             }
                         }
 
@@ -294,21 +317,32 @@ bool LocalMapping::CheckNewKeyFrames()
     unique_lock<mutex> lock(mMutexNewKFs);
     return(!mlNewKeyFrames.empty());
 }
-
+/**
+ * @brief 处理列表中的关键帧，包括计算BoW、更新观测、描述子、共视图，插入到地图等
+ */
 void LocalMapping::ProcessNewKeyFrame()
 {
+    // Step 1：从缓冲队列中取出一帧关键帧
+    // 该关键帧队列是Tracking线程向LocalMapping中插入的关键帧组成
     {
         unique_lock<mutex> lock(mMutexNewKFs);
-        mpCurrentKeyFrame = mlNewKeyFrames.front();
-        mlNewKeyFrames.pop_front();
+        mpCurrentKeyFrame = mlNewKeyFrames.front();// 取出列表中最前面的关键帧，作为当前要处理的关键帧
+        //todo 添加BA2标识
+        if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2())
+            mpCurrentKeyFrame->FirstBA2Finished=true;
+
+        mlNewKeyFrames.pop_front(); // 取出最前面的关键帧后，在原来的列表里删掉该关键帧
     }
 
     // Compute Bags of Words structures
+    // Step 2：计算该关键帧特征点的Bow信息
     mpCurrentKeyFrame->ComputeBoW();
 
     // Associate MapPoints to the new keyframe and update normal and descriptor
-    const vector<MapPoint*> vpMapPointMatches = mpCurrentKeyFrame->GetMapPointMatches();
-
+    // Step 3：当前处理关键帧中有效的地图点，更新normal，描述子等信息
+    // TrackLocalMap中和当前帧新匹配上的地图点和当前关键帧进行关联绑定
+    const vector<MapPoint*> vpMapPointMatches = mpCurrentKeyFrame->GetMapPointMatches();  //取出当前关键帧中的地图点
+    // 对当前处理的这个关键帧中的所有的地图点展开遍历
     for(size_t i=0; i<vpMapPointMatches.size(); i++)
     {
         MapPoint* pMP = vpMapPointMatches[i];
@@ -318,12 +352,18 @@ void LocalMapping::ProcessNewKeyFrame()
             {
                 if(!pMP->IsInKeyFrame(mpCurrentKeyFrame))
                 {
+                    // 如果地图点不是来自当前帧的观测，为当前地图点添加观测
                     pMP->AddObservation(mpCurrentKeyFrame, i);
+                    // 获得该点的平均观测方向和观测距离范围
                     pMP->UpdateNormalAndDepth();
+                    // 更新地图点的最佳描述子
                     pMP->ComputeDistinctiveDescriptors();
                 }
                 else // this can only happen for new stereo points inserted by the Tracking
                 {
+                    // 如果当前帧中已经包含了这个地图点,但是这个地图点中却没有包含这个关键帧的信息
+                    // 这些地图点可能来自双目或RGBD跟踪过程中新生成的地图点，或者是CreateNewMapPoints 中通过三角化产生
+                    // 将上述地图点放入mlpRecentAddedMapPoints，等待后续MapPointCulling函数的检验
                     mlpRecentAddedMapPoints.push_back(pMP);
                 }
             }
@@ -331,18 +371,25 @@ void LocalMapping::ProcessNewKeyFrame()
     }
 
     // Update links in the Covisibility Graph
+    // Step 4：更新关键帧间的连接关系（共视图）
     mpCurrentKeyFrame->UpdateConnections();
 
     // Insert Keyframe in Map
+    // Step 5：将该关键帧插入到地图中
     mpAtlas->AddKeyFrame(mpCurrentKeyFrame);
 }
-
+/**
+ * @brief 处理新的关键帧，使队列为空，注意这里只是处理了关键帧，并没有生成MP
+ */
 void LocalMapping::EmptyQueue()
 {
     while(CheckNewKeyFrames())
         ProcessNewKeyFrame();
 }
-
+/**
+ * @brief 检查新增地图点，根据地图点的观测情况剔除质量不好的新增的地图点
+ * mlpRecentAddedMapPoints: 存储新增的地图点，这里是要删除其中不靠谱的
+ */
 void LocalMapping::MapPointCulling()
 {
     // Check Recent Added MapPoints
@@ -384,7 +431,9 @@ void LocalMapping::MapPointCulling()
     }
 }
 
-
+/**
+ * @brief 新增地图点
+ * */
 void LocalMapping::CreateNewMapPoints()
 {
     // Retrieve neighbor keyframes in covisibility graph
@@ -710,7 +759,8 @@ void LocalMapping::CreateNewMapPoints()
         }
     }    
 }
-
+/**
+ * @brief 地图融合*/
 void LocalMapping::SearchInNeighbors()
 {
     // Retrieve neighbor keyframes
@@ -881,7 +931,9 @@ void LocalMapping::SetAcceptKeyFrames(bool flag)
     unique_lock<mutex> lock(mMutexAccept);
     mbAcceptKeyFrames=flag;
 }
-
+/**
+ * @brief 如果不让它暂停，即使发出了暂停信号也不暂停
+ */
 bool LocalMapping::SetNotStop(bool flag)
 {
     unique_lock<mutex> lock(mMutexStop);
@@ -1169,14 +1221,21 @@ bool LocalMapping::isFinished()
     unique_lock<mutex> lock(mMutexFinish);
     return mbFinished;
 }
-
+/**
+ * @brief imu初始化
+ * @param priorG 陀螺仪偏置的信息矩阵系数，主动设置时一般bInit为true，也就是只优化最后一帧的偏置，这个数会作为计算信息矩阵时使用
+ * @param priorA 加速度计偏置的信息矩阵系数
+ * @param bFIBA 是否做BA优化，目前都为true
+ */
 void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
 {
-    if (mbResetRequested)
+    // Step 1. 将所有关键帧放入列表及向量里，且查看是否满足初始化条件
+    if (mbResetRequested)  // 这个变量为true表示需要重置地图
         return;
 
     float minTime;
     int nMinKF;
+    // 从时间及帧数上限制初始化，不满足下面的不进行初始化
     if (mbMonocular)
     {
         minTime = 2.0;
@@ -1188,30 +1247,32 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
         nMinKF = 10;
     }
 
-
+    // 当前地图关键帧大于10帧才进行初始化
     if(mpAtlas->KeyFramesInMap()<nMinKF)
         return;
 
     // Retrieve all keyframe in temporal order
+    // 按照顺序存放目前地图里的关键帧，顺序按照前后顺序来，包括当前关键帧
     list<KeyFrame*> lpKF;
     KeyFrame* pKF = mpCurrentKeyFrame;
-    while(pKF->mPrevKF)
+    while(pKF->mPrevKF)   //从当前关键帧开始往前面遍历
     {
         lpKF.push_front(pKF);
         pKF = pKF->mPrevKF;
     }
     lpKF.push_front(pKF);
+    // 同样内容再构建一个和lpKF一样的容器vpKF
     vector<KeyFrame*> vpKF(lpKF.begin(),lpKF.end());
-
     if(vpKF.size()<nMinKF)
         return;
 
     mFirstTs=vpKF.front()->mTimeStamp;
     if(mpCurrentKeyFrame->mTimeStamp-mFirstTs<minTime)
         return;
-
+    // 告诉前端正在做IMU的初始化，在tracking里面使用，如果为true，暂不添加关键帧
     bInitializing = true;
 
+    // 先处理新关键帧，防止堆积且保证数据量充足
     while(CheckNewKeyFrames())
     {
         ProcessNewKeyFrame();
@@ -1219,55 +1280,61 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
         lpKF.push_back(mpCurrentKeyFrame);
     }
 
+    // Step 2. 正式IMU初始化
     const int N = vpKF.size();
     IMU::Bias b(0,0,0,0,0,0);
 
     // Compute and KF velocities mRwg estimation
+    // 在IMU连一次初始化都没有做的情况下
     if (!mpCurrentKeyFrame->GetMap()->isImuInitialized())
     {
         Eigen::Matrix3f Rwg;
-        Eigen::Vector3f dirG;
+        Eigen::Vector3f dirG;//重力方向
         dirG.setZero();
-        for(vector<KeyFrame*>::iterator itKF = vpKF.begin(); itKF!=vpKF.end(); itKF++)
+        for(vector<KeyFrame*>::iterator itKF = vpKF.begin(); itKF!=vpKF.end(); itKF++) //遍历所有关键帧
         {
             if (!(*itKF)->mpImuPreintegrated)
                 continue;
             if (!(*itKF)->mPrevKF)
                 continue;
-
+            // 初始化时关于速度的预积分定义 Ri.t() * (s*Vj - s*Vi - Rwg*g*tij)
             dirG -= (*itKF)->mPrevKF->GetImuRotation() * (*itKF)->mpImuPreintegrated->GetUpdatedDeltaVelocity();
+            // 求取实际的速度，位移/时间
             Eigen::Vector3f _vel = ((*itKF)->GetImuPosition() - (*itKF)->mPrevKF->GetImuPosition())/(*itKF)->mpImuPreintegrated->dT;
             (*itKF)->SetVelocity(_vel);
             (*itKF)->mPrevKF->SetVelocity(_vel);
         }
-
+        // dirG = sV1 - sVn + n*Rwg*g*t 约等于 n*Rwg*g*t
+        // 归一化，约等于重力在世界坐标系下的方向
         dirG = dirG/dirG.norm();
         Eigen::Vector3f gI(0.0f, 0.0f, -1.0f);
+        // 求重力在世界坐标系下的方向与重力在重力坐标系下的方向的叉乘，v是个轴
         Eigen::Vector3f v = gI.cross(dirG);
-        const float nv = v.norm();
-        const float cosg = gI.dot(dirG);
+        const float nv = v.norm();                      // 求叉乘模长
+        const float cosg = gI.dot(dirG);          // 求转角大小//点乘
         const float ang = acos(cosg);
-        Eigen::Vector3f vzg = v*ang/nv;
-        Rwg = Sophus::SO3f::exp(vzg).matrix();
+        Eigen::Vector3f vzg = v*ang/nv;                // v/nv 表示垂直于两个向量的轴  ang 表示转的角度，组成角轴
+        Rwg = Sophus::SO3f::exp(vzg).matrix();  // 获得重力坐标系到世界坐标系的旋转矩阵的初值
         mRwg = Rwg.cast<double>();
         mTinit = mpCurrentKeyFrame->mTimeStamp-mFirstTs;
     }
-    else
+    else//否则直接从I单位矩阵优化
     {
         mRwg = Eigen::Matrix3d::Identity();
         mbg = mpCurrentKeyFrame->GetGyroBias().cast<double>();
         mba = mpCurrentKeyFrame->GetAccBias().cast<double>();
     }
 
-    mScale=1.0;
-
+    mScale=1.0;//尺度没办法估值，直接赋为1
+    // 暂时没发现在别的地方出现过
     mInitTime = mpTracker->mLastFrame.mTimeStamp-vpKF.front()->mTimeStamp;
 
     std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+    // Step 3. 计算残差及偏置差，优化尺度、重力方向、速度偏置，偏置先验为0，双目时不优化尺度
     Optimizer::InertialOptimization(mpAtlas->GetCurrentMap(), mRwg, mScale, mbg, mba, mbMonocular, infoInertial, false, false, priorG, priorA);
 
     std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
-
+    // 尺度太小的话初始化认为失败
     if (mScale<1e-1)
     {
         cout << "scale too small" << endl;
@@ -1275,34 +1342,44 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
         return;
     }
 
+    // 到此时为止，前面做的东西没有改变map
+
     // Before this line we are not changing the map
     {
         unique_lock<mutex> lock(mpAtlas->GetCurrentMap()->mMutexMapUpdate);
+        // 尺度变化超过设定值，或者非单目时（无论带不带imu，但这个函数只在带imu时才执行，所以这个可以理解为双目imu）
         if ((fabs(mScale - 1.f) > 0.00001) || !mbMonocular) {
+            // Step 4.1 恢复重力方向与尺度信息
             Sophus::SE3f Twg(mRwg.cast<float>().transpose(), Eigen::Vector3f::Zero());
             mpAtlas->GetCurrentMap()->ApplyScaledRotation(Twg, mScale, true);
+            // Step 4.2 更新普通帧的位姿，主要是当前帧与上一帧
             mpTracker->UpdateFrameIMU(mScale, vpKF[0]->GetImuBias(), mpCurrentKeyFrame);
         }
 
         // Check if initialization OK
+        // 即使初始化成功后面还会执行这个函数重新初始化
+        // 在之前没有初始化成功情况下（此时刚刚初始化成功）对每一帧都标记，后面的kf全部都在tracking里面标记为true
+        // 也就是初始化之前的那些关键帧即使有imu信息也不算
         if (!mpAtlas->isImuInitialized())
             for (int i = 0; i < N; i++) {
                 KeyFrame *pKF2 = vpKF[i];
                 pKF2->bImu = true;
             }
     }
-
+    // 更新
     mpTracker->UpdateFrameIMU(1.0,vpKF[0]->GetImuBias(),mpCurrentKeyFrame);
+    // 更新设置 经过初始化了
     if (!mpAtlas->isImuInitialized())
     {
-        mpAtlas->SetImuInitialized();
+        mpAtlas->SetImuInitialized(); // todo ! 重要！标记初始化成功
         mpTracker->t0IMU = mpTracker->mCurrentFrame.mTimeStamp;
         mpCurrentKeyFrame->bImu = true;
     }
 
     std::chrono::steady_clock::time_point t4 = std::chrono::steady_clock::now();
-    if (bFIBA)
+    if (bFIBA)  // 代码里都为true
     {
+        // Step 5. 承接上一步纯imu优化，按照之前的结果更新了尺度信息及适应重力方向，所以要结合地图进行一次视觉加imu的全局优化，这次带了MP等信息
         if (priorA!=0.f)
             Optimizer::FullInertialBA(mpAtlas->GetCurrentMap(), 100, false, mpCurrentKeyFrame->mnId, NULL, true, priorG, priorA);
         else
@@ -1319,6 +1396,8 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
     unsigned long GBAid = mpCurrentKeyFrame->mnId;
 
     // Process keyframes in the queue
+    // Step 6. 处理一下新来的关键帧，这些关键帧没有参与优化，但是这部分bInitializing为true，只在第2次跟第3次初始化会有新的关键帧进来
+    // 这部分关键帧也需要被更新
     while(CheckNewKeyFrames())
     {
         ProcessNewKeyFrame();
@@ -1327,24 +1406,33 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
     }
 
     // Correct keyframes starting at map first keyframe
+    // Step 7. 更新位姿与三维点
+    // 获取地图中初始关键帧，第一帧肯定经过修正的
     list<KeyFrame*> lpKFtoCheck(mpAtlas->GetCurrentMap()->mvpKeyFrameOrigins.begin(),mpAtlas->GetCurrentMap()->mvpKeyFrameOrigins.end());
-
+    // 初始就一个关键帧，顺藤摸瓜找到父子相连的所有关键帧
+    // 类似于树的广度优先搜索，其实也就是根据父子关系遍历所有的关键帧，有的参与了FullInertialBA有的没参与
     while(!lpKFtoCheck.empty())
     {
+        // 7.1 获得这个关键帧的子关键帧
         KeyFrame* pKF = lpKFtoCheck.front();
         const set<KeyFrame*> sChilds = pKF->GetChilds();
-        Sophus::SE3f Twc = pKF->GetPoseInverse();
+        Sophus::SE3f Twc = pKF->GetPoseInverse();  // 获得关键帧的优化前的位姿
+        // 7.2 遍历这个关键帧所有的子关键帧
         for(set<KeyFrame*>::const_iterator sit=sChilds.begin();sit!=sChilds.end();sit++)
         {
+            // 确认是否能用
             KeyFrame* pChild = *sit;
             if(!pChild || pChild->isBad())
                 continue;
-
+            // 这个判定为true表示pChild没有参与前面的优化，因此要根据已经优化过的更新，结果全部暂存至变量
             if(pChild->mnBAGlobalForKF!=GBAid)
             {
+                // pChild->GetPose()也是优化前的位姿，Twc也是优化前的位姿
+                // 7.3 因此他们的相对位姿是比较准的，可以用于更新pChild的位姿
                 Sophus::SE3f Tchildc = pChild->GetPose() * Twc;
+                // 使用相对位姿，根据pKF优化后的位姿更新pChild位姿，最后结果都暂时放于mTcwGBA(中间值)
                 pChild->mTcwGBA = Tchildc * pKF->mTcwGBA;
-
+                // 7.4 使用相同手段更新速度速度
                 Sophus::SO3f Rcor = pChild->mTcwGBA.so3().inverse() * pChild->GetPose().so3();
                 if(pChild->isVelocitySet()){
                     pChild->mVwbGBA = Rcor * pChild->GetVelocity();
@@ -1357,12 +1445,14 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
                 pChild->mnBAGlobalForKF = GBAid;
 
             }
+            // 加入到list中，再去寻找pChild的子关键帧
             lpKFtoCheck.push_back(pChild);
         }
-
+        // 7.5 此时pKF的利用价值就没了，但是里面的数值还都是优化前的，优化后的全部放于类似mTcwGBA这样的变量中
+        // 所以要更新到正式的状态里，另外mTcwBefGBA要记录更新前的位姿，用于同样的手段更新三维点用
         pKF->mTcwBefGBA = pKF->GetPose();
         pKF->SetPose(pKF->mTcwGBA);
-
+        // 速度偏置同样更新
         if(pKF->bImu)
         {
             pKF->mVwbBefGBA = pKF->GetVelocity();
@@ -1376,6 +1466,7 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
     }
 
     // Correct MapPoints
+    // Step 8. 更新三维点，三维点在优化后同样没有正式的更新，而是找了个中间变量保存了优化后的数值
     const vector<MapPoint*> vpMPs = mpAtlas->GetCurrentMap()->GetAllMapPoints();
 
     for(size_t i=0; i<vpMPs.size(); i++)
@@ -1384,12 +1475,13 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
 
         if(pMP->isBad())
             continue;
-
+        // 8.1 如果这个点参与了全局优化，那么直接使用优化后的值来赋值
         if(pMP->mnBAGlobalForKF==GBAid)
         {
             // If optimized by Global BA, just update
             pMP->SetWorldPos(pMP->mPosGBA);
         }
+        // 如果没有参与，与关键帧的更新方式类似
         else
         {
             // Update according to the correction of its reference keyframe
@@ -1399,9 +1491,11 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
                 continue;
 
             // Map to non-corrected camera
+            // 8.2 根据优化前的世界坐标系下三维点的坐标以及优化前的关键帧位姿计算这个点在关键帧下的坐标
             Eigen::Vector3f Xc = pRefKF->mTcwBefGBA * pMP->GetWorldPos();
 
             // Backproject using corrected camera
+            // 8.3 根据优化后的位姿转到世界坐标系下作为这个点优化后的三维坐标
             pMP->SetWorldPos(pRefKF->GetPoseInverse() * Xc);
         }
     }
@@ -1410,7 +1504,7 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
 
     mnKFs=vpKF.size();
     mIdxInit++;
-
+    // Step 9. 再有新的来就不要了~不然陷入无限套娃了
     for(list<KeyFrame*>::iterator lit = mlNewKeyFrames.begin(), lend=mlNewKeyFrames.end(); lit!=lend; lit++)
     {
         (*lit)->SetBadFlag();

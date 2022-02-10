@@ -89,8 +89,11 @@ namespace ORB_SLAM3 {
         float gyroWalk() {return gyroWalk_;}
         float accWalk() {return accWalk_;}
         float imuFrequency() {return imuFrequency_;}
+
         Sophus::SE3f Tbc() {return Tbc_;}
         bool insertKFsWhenLost() {return insertKFsWhenLost_;}
+
+        float jointFrequency() {return jointFrequency_;}
 
         float depthMapFactor() {return depthMapFactor_;}
 
@@ -192,6 +195,9 @@ namespace ORB_SLAM3 {
         float imuFrequency_;
         Sophus::SE3f Tbc_;
         bool insertKFsWhenLost_;
+
+        // joint
+        float jointFrequency_;
 
         /*
          * RGBD stuff

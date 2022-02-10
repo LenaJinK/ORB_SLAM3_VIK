@@ -30,7 +30,7 @@ namespace ORB_SLAM3
 FrameDrawer::FrameDrawer(Atlas* pAtlas):both(false),mpAtlas(pAtlas)
 {
     mState=Tracking::SYSTEM_NOT_READY;
-    mIm = cv::Mat(480,640,CV_8UC3, cv::Scalar(0,0,0));
+    mIm = cv::Mat(480,640,CV_8UC3, cv::Scalar(0,0,0));   // 初始image
     mImRight = cv::Mat(480,640,CV_8UC3, cv::Scalar(0,0,0));
 }
 
@@ -66,6 +66,9 @@ cv::Mat FrameDrawer::DrawFrame(float imageScale)
             mState=Tracking::NO_IMAGES_YET;
 
         mIm.copyTo(im);
+//        //  check mIm size
+//        cout<<"FrameDrawer: mIm.size: " << mIm.cols << "*" << mIm.rows << endl;
+//        cout<<"FrameDrawer: im.size: " << im.cols << "*" << im.rows << endl;
 
         if(mState==Tracking::NOT_INITIALIZED)
         {

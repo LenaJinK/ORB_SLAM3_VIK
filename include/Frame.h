@@ -25,10 +25,12 @@
 #include "Thirdparty/DBoW2/DBoW2/BowVector.h"
 #include "Thirdparty/DBoW2/DBoW2/FeatureVector.h"
 
-#include "Thirdparty/Sophus/sophus/geometry.hpp"
+//#include "Thirdparty/Sophus/sophus/geometry.hpp"
+#include "sophus/geometry.hpp"
 
 #include "ImuTypes.h"
 #include "ORBVocabulary.h"
+#include "forward_kinematics.h"
 
 #include "Converter.h"
 #include "Settings.h"
@@ -62,7 +64,9 @@ public:
     Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera,Frame* pPrevF = static_cast<Frame*>(NULL), const IMU::Calib &ImuCalib = IMU::Calib());
 
     // Constructor for RGB-D cameras.
-    Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera,Frame* pPrevF = static_cast<Frame*>(NULL), const IMU::Calib &ImuCalib = IMU::Calib());
+    Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera,Frame* pPrevF = static_cast<Frame*>(NULL),const IMU::Calib &ImuCalib = IMU::Calib());//todo
+    // todu RGBD-IMU-Kinematic
+    Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera,Frame* pPrevF = static_cast<Frame*>(NULL), const IMU::Calib &ImuCalib = IMU::Calib(),const Joint::Calib &JointCalib = Joint::Calib());//todo
 
     // Constructor for Monocular cameras.
     Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, GeometricCamera* pCamera, cv::Mat &distCoef, const float &bf, const float &thDepth, Frame* pPrevF = static_cast<Frame*>(NULL), const IMU::Calib &ImuCalib = IMU::Calib());
@@ -90,6 +94,10 @@ public:
     Eigen::Matrix<float,3,1> GetImuPosition() const;
     Eigen::Matrix<float,3,3> GetImuRotation();
     Sophus::SE3<float> GetImuPose();
+
+    Eigen::Matrix<float,3,1> GetCoMPosition() const;   // todo CoM pose
+    Eigen::Matrix<float,3,3> GetCoMRotation();
+    Sophus::SE3<float> GetCoMPose();
 
     Sophus::SE3f GetRelativePoseTrl();
     Sophus::SE3f GetRelativePoseTlr();
@@ -125,6 +133,9 @@ public:
 
     bool imuIsPreintegrated();
     void setIntegrated();
+
+    bool JointIsCalculated();  //todo
+    void setCalculated();
 
     bool isSet() const;
 
@@ -259,13 +270,18 @@ public:
     // Imu calibration
     IMU::Calib mImuCalib;
 
+    // todo
+    Joint::Calib mJointCalib;
+
     // Imu preintegration from last keyframe
-    IMU::Preintegrated* mpImuPreintegrated;
+    IMU::Preintegrated* mpImuPreintegrated; //上一关键帧到当前帧的预积分
+    Joint::ForwardKinematics* mpJointCalculated;  //todo 上一关键帧到当前帧的kinematic
     KeyFrame* mpLastKeyFrame;
 
     // Pointer to previous frame
     Frame* mpPrevFrame;
     IMU::Preintegrated* mpImuPreintegratedFrame;
+    Joint::ForwardKinematics* mpJointCalculatedFrame;   // notice
 
     // Current and Next Frame id.
     static long unsigned int nNextId;
@@ -322,6 +338,10 @@ private:
 
     std::mutex *mpMutexImu;
 
+    bool mbJointCalculated;  //todo
+
+    std::mutex *mpMutexJoint;
+
 public:
     GeometricCamera* mpCamera, *mpCamera2;
 
@@ -338,7 +358,7 @@ public:
 
     //Triangulated stereo observations using as reference the left camera. These are
     //computed during ComputeStereoFishEyeMatches
-    std::vector<Eigen::Vector3f> mvStereo3Dpoints;
+    std::vector<Eigen::Vector3f,Eigen::aligned_allocator<Eigen::Vector3f>> mvStereo3Dpoints;
 
     //Grid for the right image
     std::vector<std::size_t> mGridRight[FRAME_GRID_COLS][FRAME_GRID_ROWS];

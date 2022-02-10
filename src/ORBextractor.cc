@@ -869,7 +869,7 @@ namespace ORB_SLAM3
                     }
 
                 }
-            }
+            }//遍历网格提取角点
 
             vector<KeyPoint> & keypoints = allKeypoints[level];
             keypoints.reserve(nfeatures);
@@ -1082,7 +1082,7 @@ namespace ORB_SLAM3
         for (size_t i = 0; i < keypoints.size(); i++)
             computeOrbDescriptor(keypoints[i], image, &pattern[0], descriptors.ptr((int)i));
     }
-
+// notice main function
     int ORBextractor::operator()( InputArray _image, InputArray _mask, vector<KeyPoint>& _keypoints,
                                   OutputArray _descriptors, std::vector<int> &vLappingArea)
     {
@@ -1095,7 +1095,7 @@ namespace ORB_SLAM3
 
         // Pre-compute the scale pyramid
         ComputePyramid(image);
-
+        // 为每一层提取特征点
         vector < vector<KeyPoint> > allKeypoints;
         ComputeKeyPointsOctTree(allKeypoints);
         //ComputeKeyPointsOld(allKeypoints);
@@ -1142,10 +1142,12 @@ namespace ORB_SLAM3
 
             float scale = mvScaleFactor[level]; //getScale(level, firstLevel, scaleFactor);
             int i = 0;
+            //
             for (vector<KeyPoint>::iterator keypoint = keypoints.begin(),
                          keypointEnd = keypoints.end(); keypoint != keypointEnd; ++keypoint){
 
                 // Scale keypoint coordinates
+                // 恢复到第0层
                 if (level != 0){
                     keypoint->pt *= scale;
                 }

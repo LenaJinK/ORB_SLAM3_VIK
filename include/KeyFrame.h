@@ -28,6 +28,7 @@
 #include "Frame.h"
 #include "KeyFrameDatabase.h"
 #include "ImuTypes.h"
+#include "forward_kinematics.h"
 
 #include "GeometricCamera.h"
 #include "SerializationUtils.h"
@@ -184,12 +185,15 @@ class KeyFrame
         ar & mImuBias;
         ar & mBackupImuPreintegrated;
         ar & mImuCalib;
+
         ar & mBackupPrevKFId;
         ar & mBackupNextKFId;
         ar & bImu;
         ar & boost::serialization::make_array(mVw.data(), mVw.size());
         ar & boost::serialization::make_array(mOwb.data(), mOwb.size());
         ar & mbHasVelocity;
+
+        ar & mJointCalib;  // todo
     }
 
 public:
@@ -208,6 +212,8 @@ public:
 
     Eigen::Vector3f GetImuPosition();
     Eigen::Matrix3f GetImuRotation();
+    Eigen::Vector3f GetCoMPosition();
+    Eigen::Matrix3f GetCoMRotation();
     Sophus::SE3f GetImuPose();
     Eigen::Matrix3f GetRotation();
     Eigen::Vector3f GetTranslation();
@@ -311,6 +317,8 @@ public:
     static long unsigned int nNextId;
     long unsigned int mnId;
     const long unsigned int mnFrameId;
+    bool FirstBA2Finished;  //todo new mode
+
 
     const double mTimeStamp;
 
@@ -411,6 +419,7 @@ public:
 
     IMU::Preintegrated* mpImuPreintegrated;
     IMU::Calib mImuCalib;
+    Joint::Calib mJointCalib;
 
     unsigned int mnOriginMapId;
 
@@ -437,6 +446,10 @@ protected:
     // Velocity (Only used for inertial SLAM)
     Eigen::Vector3f mVw;
     bool mbHasVelocity;
+
+    // todo new CoM pose
+    Eigen::Vector3f mtwcom;
+    Eigen::Matrix3f mRwcom;
 
     //Transformation matrix between cameras in stereo fisheye
     Sophus::SE3<float> mTlr;

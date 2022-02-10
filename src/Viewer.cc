@@ -1,20 +1,4 @@
-/**
-* This file is part of ORB-SLAM3
-*
-* Copyright (C) 2017-2021 Carlos Campos, Richard Elvira, Juan J. Gómez Rodríguez, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
-* Copyright (C) 2014-2016 Raúl Mur-Artal, José M.M. Montiel and Juan D. Tardós, University of Zaragoza.
-*
-* ORB-SLAM3 is free software: you can redistribute it and/or modify it under the terms of the GNU General Public
-* License as published by the Free Software Foundation, either version 3 of the License, or
-* (at your option) any later version.
-*
-* ORB-SLAM3 is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
-* the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-* GNU General Public License for more details.
-*
-* You should have received a copy of the GNU General Public License along with ORB-SLAM3.
-* If not, see <http://www.gnu.org/licenses/>.
-*/
+
 
 
 #include "Viewer.h"
@@ -24,7 +8,25 @@
 
 namespace ORB_SLAM3
 {
-
+//Viewer类构造函数
+/********************************************************
+    pSystem： System类当前SLAM系统
+    pFrameDrawer：FrameDrawer类指针
+    pMapDrawer:MapDrawer类指针
+    pTracking：Tracking线程指针
+    strSettingPath：标定文件
+********************************************************/
+/****************初始化*******************************
+    both： 初始化为false
+    mpSystem：System类当前SLAM系统
+    mpFrameDrawer:FrameDrawer类指针
+    mpMapDrawer：MapDrawer类指针
+    mpTracker：Tracking线程指针
+    mbFinishRequested：初始化为false
+    mbFinished:初始化为true
+    mbStopped：初始化为true
+    mbStopRequested:初始化为false
+********************************************************/
 Viewer::Viewer(System* pSystem, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Tracking *pTracking, const string &strSettingPath, Settings* settings):
     both(false), mpSystem(pSystem), mpFrameDrawer(pFrameDrawer),mpMapDrawer(pMapDrawer), mpTracker(pTracking),
     mbFinishRequested(false), mbFinished(true), mbStopped(true), mbStopRequested(false)
@@ -56,12 +58,13 @@ Viewer::Viewer(System* pSystem, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer
 }
 
 void Viewer::newParameterLoader(Settings *settings) {
+//    cout << "viewer: use newParameterLoader" << endl;
     mImageViewerScale = 1.f;
 
-    float fps = settings->fps();
+    float fps = settings->fps(); //图像帧速
     if(fps<1)
         fps=30;
-    mT = 1e3/fps;
+    mT = 1e3/fps;   // 1/fps in ms
 
     cv::Size imSize = settings->newImSize();
     mImageHeight = imSize.height;
@@ -73,9 +76,10 @@ void Viewer::newParameterLoader(Settings *settings) {
     mViewpointZ = settings->viewPointZ();
     mViewpointF = settings->viewPointF();
 }
-
+//viewer初始化实际用到的函数
 bool Viewer::ParseViewerParamFile(cv::FileStorage &fSettings)
 {
+//    cout << "viewer: use ParseViewerParamFile" << endl;
     bool b_miss_params = false;
     mImageViewerScale = 1.f;
 
@@ -88,6 +92,7 @@ bool Viewer::ParseViewerParamFile(cv::FileStorage &fSettings)
     if(!node.empty())
     {
         mImageWidth = node.real();
+//        cout  << "camera.width: "<< mImageWidth<<endl;  //  check
     }
     else
     {
@@ -99,6 +104,7 @@ bool Viewer::ParseViewerParamFile(cv::FileStorage &fSettings)
     if(!node.empty())
     {
         mImageHeight = node.real();
+//        cout  << "camera.height: "<< mImageHeight<<endl;  // check
     }
     else
     {
@@ -163,7 +169,7 @@ void Viewer::Run()
 {
     mbFinished = false;
     mbStopped = false;
-
+    // 显示相机位姿的窗口
     pangolin::CreateWindowAndBind("ORB-SLAM3: Map Viewer",1024,768);
 
     // 3D Mouse handler requires depth testing to be enabled
@@ -190,12 +196,24 @@ void Viewer::Run()
 
     pangolin::Var<bool> menuShowOptLba("menu.Show LBA opt", false, true);
     // Define Camera Render Object (for view / scene browsing)
+    /*****************************定义相机对象************************
+     * ProjectionMatrix：构建观察相机的内参系数
+     *                   1024,768：相机视野的宽和高
+     *                   mViewpointF,mViewpointF:应该对应的是相机的fx,fy
+     *                   512,389：应该对应的是cx,cy
+     *                   0.1,1000：相机的最近和最远视野
+     * ModelViewLookAt：相机、视点的初始坐标
+     *                  mViewpointX,mViewpointY,mViewpointZ：相机的初始坐标
+     *                  0,0,0：相机光轴朝向
+     *                  0.0,-1.0, 0.0：相机y轴朝下
+     * *************************************************************/
     pangolin::OpenGlRenderState s_cam(
                 pangolin::ProjectionMatrix(1024,768,mViewpointF,mViewpointF,512,389,0.1,1000),
                 pangolin::ModelViewLookAt(mViewpointX,mViewpointY,mViewpointZ, 0,0,0,0.0,-1.0, 0.0)
-                );
+                );  //相机对象
 
     // Add named OpenGL viewport to window and provide 3D Handler
+    // 创建视角窗口
     pangolin::View& d_cam = pangolin::CreateDisplay()
             .SetBounds(0.0, 1.0, pangolin::Attach::Pix(175), 1.0, -1024.0f/768.0f)
             .SetHandler(new pangolin::Handler3D(s_cam));
@@ -210,7 +228,7 @@ void Viewer::Run()
     bool bLocalizationMode = false;
     bool bStepByStep = false;
     bool bCameraView = true;
-
+    // 如果没有IMU，则menuShowGraph标志位为真
     if(mpTracker->mSensor == mpSystem->MONOCULAR || mpTracker->mSensor == mpSystem->STEREO || mpTracker->mSensor == mpSystem->RGBD)
     {
         menuShowGraph = true;
@@ -219,11 +237,13 @@ void Viewer::Run()
     float trackedImageScale = mpTracker->GetImageScale();
 
     cout << "Starting the Viewer" << endl;
+
     while(1)
     {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        mpMapDrawer->GetCurrentOpenGLCameraMatrix(Twc,Ow);
+        // Twc存储的是以列优先的16个数值，表示相机的旋转、平移
+        // 在MapDrawer.cc中进行存储Twc,Ow以及Twwp
+        mpMapDrawer->GetCurrentOpenGLCameraMatrix(Twc,Ow);  //得到最新的相机位姿
 
         if(mbStopTrack)
         {
@@ -233,7 +253,7 @@ void Viewer::Run()
 
         if(menuFollowCamera && bFollow)
         {
-            if(bCameraView)
+            if(bCameraView)//初始化为true，表示相机跟随Twc的位置设置
                 s_cam.Follow(Twc);
             else
                 s_cam.Follow(Ow);
@@ -259,7 +279,7 @@ void Viewer::Run()
             bFollow = false;
         }
 
-        if(menuCamView)
+        if(menuCamView)//初始化为false
         {
             menuCamView = false;
             bCameraView = true;
@@ -317,15 +337,18 @@ void Viewer::Run()
 
         pangolin::FinishFrame();
 
-        cv::Mat toShow;
+        cv::Mat toShow;  // 存储 显示窗口的图像
         cv::Mat im = mpFrameDrawer->DrawFrame(trackedImageScale);
 
-        if(both){
+        if(both){// both
             cv::Mat imRight = mpFrameDrawer->DrawRightFrame(trackedImageScale);
             cv::hconcat(im,imRight,toShow);
+//            cout << "both: imRight "<< both << endl;
+
         }
         else{
             toShow = im;
+//            cout << " only im value! "<< both << endl;
         }
 
         if(mImageViewerScale != 1.f)
@@ -335,7 +358,10 @@ void Viewer::Run()
             cv::resize(toShow, toShow, cv::Size(width, height));
         }
 
+
         cv::imshow("ORB-SLAM3: Current Frame",toShow);
+//        cout << "im.width:"<< toShow.cols <<"  im.height:" << toShow.rows << endl;  // check im size
+
         cv::waitKey(mT);
 
         if(menuReset)

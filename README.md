@@ -29,7 +29,7 @@ chmod +x build_ros.sh
 ./build_ros.sh
   ```
 
-## 新增修改:
+## 1.0 版本新增修改:
 1. 添加运动学模块，增加了rgbd_inertial_kinematic模式
 2. 增加了VIK模式的ROS接口
 3. 修改了yaml参数读取文件，添加了运动学外参

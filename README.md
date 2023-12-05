@@ -7,7 +7,6 @@ chmod +x build.sh
 ```
 
 ## 增加ROS接口:
-> ros_rgbd_inertial_kinematic.cc
 
 1. Add the path including *Examples/ROS/ORB_SLAM3* to the ROS_PACKAGE_PATH environment variable. Open .bashrc file:
 
@@ -30,9 +29,16 @@ chmod +x build_ros.sh
 ./build_ros.sh
   ```
 
-## 1.0版本新增:
-1. 运动学模块
+## 小修改后 编译:
 
-2. 新yaml参数文件 c_i_640480.yaml
+```bash
+
+```
+
+ 
 
 
+
+
+
+添加launch文件

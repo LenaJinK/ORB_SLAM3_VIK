@@ -11,7 +11,7 @@ chmod +x build.sh
 1. `.bashrc`中添加ROS_PACKAGE_PATH
 
   ```bash
-gedit ~/.bashrc \
+gedit ~/.bashrc 
 export ROS_PACKAGE_PATH=${ROS_PACKAGE_PATH}:PATH/ORB_SLAM3/Examples/ROS
   ```
 修改完记得source一下。

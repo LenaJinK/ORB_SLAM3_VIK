@@ -1,0 +1,1402 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="gtx3_description">
+  <link name="dummy">
+  </link>
+  <joint name="dummy_joint" type="fixed">
+        <parent link="dummy"/>
+        <child link="BODY"/>
+  </joint>
+
+  <link
+    name="BODY">
+    <inertial>
+      <origin
+        xyz="-0.003165 0.000085 0.046480"
+        rpy="0 0 0" />
+      <mass
+        value="0.737" />
+      <inertia
+        ixx="3.276198E-03"
+        ixy="-9.84E-07"
+        ixz="8.7305E-05"
+        iyy="1.243071E-03"
+        iyz="2.1596E-05"
+        izz="2.836655E-03" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/BODY.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/BODY.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="HEAD_PAN">
+    <inertial>
+      <origin
+        xyz="0.0020386 0.0000 0.0080557"
+        rpy="0 0 0" />
+      <mass
+        value="0.008844" />
+      <inertia
+        ixx="3.4855E-06"
+        ixy="0.000"
+        ixz="-1.834E-07"
+        iyy="1.1818E-06"
+        iyz="0.000"
+        izz="3.4649E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/HEAD_PAN.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/HEAD_PAN.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="head_pan"
+    type="revolute">
+    <origin
+      xyz="0 0 0.1088"
+      rpy="0 0 0" />
+    <parent
+      link="BODY" />
+    <child
+      link="HEAD_PAN" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="HEAD_TILT">
+    <inertial>
+      <origin
+        xyz="0.001040 0.000345 0.018708"
+        rpy="0 0 0" />
+      <mass
+        value="0.119" />
+      <inertia
+        ixx="7.4674E-05"
+        ixy="2.5E-08"
+        ixz="-4.772E-06"
+        iyy="5.2001E-05"
+        iyz="6.31E-07"
+        izz="4.5574E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/HEAD_TILT.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/HEAD_TILT.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="head_tilt"
+    type="revolute">
+    <origin
+      xyz="0.008 0 0.0256"
+      rpy="0 0 0" />
+    <parent
+      link="HEAD_PAN" />
+    <child
+      link="HEAD_TILT" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="D435i">
+    <inertial>
+      <origin
+        xyz="5.8698E-05 2.7744E-05 0.00000"
+        rpy="0 0 0" />
+      <mass
+        value="0.075" />
+      <inertia
+        ixx="4.8700E-5"
+        ixy="2.4E-08"
+        ixz="0.000"
+        iyy="7.164E-06"
+        iyz="0.000"
+        izz="4.8676E-5" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/D435i.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/D435i.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="D435i"
+    type="fixed">
+    <origin
+      xyz="0.001 0.00055 0.0547"
+      rpy="0 0 0" />
+    <parent
+      link="HEAD_TILT" />
+    <child
+      link="D435i" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+
+  <link name="camera">
+  </link>
+  <joint name="camera" type="fixed">
+    <origin
+      xyz="0.011 -0.0115 0"
+      rpy="-1.5708 0 -1.5708" />
+    <parent link="D435i"/>
+    <child link="camera"/>
+    <axis xyz="0 0 0" />
+  </joint>
+
+  <link
+    name="L_SHO_PITCH">
+    <inertial>
+      <origin
+        xyz="0.000 0.010651 -0.00010916"
+        rpy="0 0 0" />
+      <mass
+        value="0.0162" />
+      <inertia
+        ixx="3.3037E-06"
+        ixy="0.000"
+        ixz="0.000"
+        iyy="5.8061E-06"
+        iyz="-4.4288E-08"
+        izz="6.9598E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_SHO_PITCH.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_SHO_PITCH.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_sho_pitch"
+    type="revolute">
+    <origin
+      xyz="-0.00025 0.0942 0.09125"
+      rpy="0 0 0" />
+    <parent
+      link="BODY" />
+    <child
+      link="L_SHO_PITCH" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="L_SHO_ROLL">
+    <inertial>
+      <origin
+        xyz="0.000371 0.038368 6.000E-06"
+        rpy="0 0 0" />
+      <mass
+        value="0.083" />
+      <inertia
+        ixx="9.9275E-05"
+        ixy="-6.52E-07"
+        ixz="-6.000E-09"
+        iyy="2.2624E-05"
+        iyz="-1.9E-08"
+        izz="9.8306E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_SHO_ROLL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_SHO_ROLL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_sho_roll"
+    type="revolute">
+    <origin
+      xyz="0 0.026 0"
+      rpy="0 0 0" />
+    <parent
+      link="L_SHO_PITCH" />
+    <child
+      link="L_SHO_ROLL" />
+    <axis
+      xyz="-1 0 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="L_EL">
+    <inertial>
+      <origin
+        xyz="-6.000E-06 0.029299 0.002273"
+        rpy="0 0 0" />
+      <mass
+        value="0.082" />
+      <inertia
+        ixx="5.6460E-05"
+        ixy="1.4E-08"
+        ixz="7.0E-09"
+        iyy="1.4E-08"
+        iyz="4.497E-06"
+        izz="5.2902E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_EL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_EL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_el"
+    type="revolute">
+    <origin
+      xyz="0.0001 0.0947 0"
+      rpy="0 0 0" />
+    <parent
+      link="L_SHO_ROLL" />
+    <child
+      link="L_EL" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="R_SHO_PITCH">
+    <inertial>
+      <origin
+        xyz="0.0000 -0.010651 -0.00010916"
+        rpy="0 0 0" />
+      <mass
+        value="0.0162" />
+      <inertia
+        ixx="3.3037E-06"
+        ixy="0.000"
+        ixz="0.000"
+        iyy="5.8061E-06"
+        iyz="4.4288E-08"
+        izz="6.9598E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_SHO_PITCH.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_SHO_PITCH.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_sho_pitch"
+    type="revolute">
+    <origin
+      xyz="-0.00025 -0.0942 0.09125"
+      rpy="0 0 0" />
+    <parent
+      link="BODY" />
+    <child
+      link="R_SHO_PITCH" />
+    <axis
+      xyz="0 -1 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="R_SHO_ROLL">
+    <inertial>
+      <origin
+        xyz="0.000371 -0.038368 -6.000E-06"
+        rpy="0 0 0" />
+      <mass
+        value="0.083" />
+      <inertia
+        ixx="9.9275E-05"
+        ixy="6.52E-07"
+        ixz="6.0E-09"
+        iyy="2.2624E-05"
+        iyz="-1.9E-08"
+        izz="9.8306E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_SHO_ROLL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_SHO_ROLL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_sho_roll"
+    type="revolute">
+    <origin
+      xyz="0 -0.026 0"
+      rpy="0 0 0" />
+    <parent
+      link="R_SHO_PITCH" />
+    <child
+      link="R_SHO_ROLL" />
+    <axis
+      xyz="-1 0 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="R_EL">
+    <inertial>
+      <origin
+        xyz="6.0000E-06 -0.029299 0.002273"
+        rpy="0 0 0" />
+      <mass
+        value="0.082" />
+      <inertia
+        ixx="5.6460E-05"
+        ixy="1.4E-08"
+        ixz="7.000E-09"
+        iyy="1.7930E-05"
+        iyz="-4.497E-06"
+        izz="5.2902E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_EL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_EL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_el"
+    type="revolute">
+    <origin
+      xyz="0.0001 -0.0947 0"
+      rpy="0 0 0" />
+    <parent
+      link="R_SHO_ROLL" />
+    <child
+      link="R_EL" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="WAIST">
+    <inertial>
+      <origin
+        xyz="-0.012535 0.0000 -0.028997"
+        rpy="0 0 0" />
+      <mass
+        value="0.538" />
+      <inertia
+        ixx="7.28002E-04"
+        ixy="2.0000E-09"
+        ixz="4.457E-06"
+        iyy="3.154847E-04"
+        iyz="2.000E-09"
+        izz="8.32658E-04" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/WAIST.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/WAIST.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="waist"
+    type="revolute">
+    <origin
+      xyz="0 0 -0.004"
+      rpy="0 0 0" />
+    <parent
+      link="BODY" />
+    <child
+      link="WAIST" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="L_HIP_YAW">
+    <inertial>
+      <origin
+        xyz="0.0020262 0.00000 -0.0089335"
+        rpy="0 0 0" />
+      <mass
+        value="0.022437" />
+      <inertia
+        ixx="3.961E-06"
+        ixy="0.00000"
+        ixz="-3.4E-08"
+        iyy="1.0931E-05"
+        iyz="0.0000"
+        izz="1.1907E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_HIP_YAW.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_HIP_YAW.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_hip_yaw"
+    type="revolute">
+    <origin
+      xyz="0 0.041 -0.0497"
+      rpy="0 0 0" />
+    <parent
+      link="WAIST" />
+    <child
+      link="L_HIP_YAW" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="L_HIP_ROLL">
+    <inertial>
+      <origin
+        xyz="-0.021465 5.10000E-05 -0.014510"
+        rpy="0 0 0" />
+      <mass
+        value="0.308" />
+      <inertia
+        ixx="1.19261E-04"
+        ixy="1.038E-06"
+        ixz="1.4319E-05"
+        iyy="3.23349E-04"
+        iyz="-3.02E-07"
+        izz="2.81948E-04" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_HIP_ROLL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_HIP_ROLL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_hip_roll"
+    type="revolute">
+    <origin
+      xyz="0 0 -0.0345"
+      rpy="0 0 0" />
+    <parent
+      link="L_HIP_YAW" />
+    <child
+      link="L_HIP_ROLL" />
+    <axis
+      xyz="1 0 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="L_HIP_PITCH">
+    <inertial>
+      <origin
+        xyz="0.0000 -0.00032 -0.094865"
+        rpy="0 0 0" />
+      <mass
+        value="0.179" />
+      <inertia
+        ixx="1.67951E-04"
+        ixy="0.000"
+        ixz="0.000"
+        iyy="1.46949E-04"
+        iyz="-6.1E-08"
+        izz="5.0255E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_HIP_PITCH.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_HIP_PITCH.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_hip_pitch"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="L_HIP_ROLL" />
+    <child
+      link="L_HIP_PITCH" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="L_KNEE">
+    <inertial>
+      <origin
+        xyz="0.0021571 -0.0004 -0.057639"
+        rpy="0 0 0" />
+      <mass
+        value="0.03206" />
+      <inertia
+        ixx="4.9412E-05"
+        ixy="0.000"
+        ixz="8.92E-07"
+        iyy="3.5013E-05"
+        iyz="0.000"
+        izz="1.9930E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_KNEE.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_KNEE.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_knee"
+    type="revolute">
+    <origin
+      xyz="0 0 -0.12"
+      rpy="0 0 0" />
+    <parent
+      link="L_HIP_PITCH" />
+    <child
+      link="L_KNEE" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="L_ANK_PITCH">
+    <inertial>
+      <origin
+        xyz="-0.021456 -0.000161 0.014510"
+        rpy="0 0 0" />
+      <mass
+        value="0.308" />
+      <inertia
+        ixx="1.19262E-04"
+        ixy="8.80E-07"
+        ixz="-1.4319E-05"
+        iyy="3.23349E-04"
+        iyz="3.47E-07"
+        izz="2.81949E-04" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_ANK_PITCH.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_ANK_PITCH.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_ank_pitch"
+    type="revolute">
+    <origin
+      xyz="0 0 -0.12"
+      rpy="0 0 0" />
+    <parent
+      link="L_KNEE" />
+    <child
+      link="L_ANK_PITCH" />
+    <axis
+      xyz="0 -1 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="L_ANK_ROLL">
+    <inertial>
+      <origin
+        xyz="0.00024893 0.004754 -0.030898"
+        rpy="0 0 0" />
+      <mass
+        value="0.052" />
+      <inertia
+        ixx="1.8195E-05"
+        ixy="-4.35E-07"
+        ixz="5.80E-07"
+        iyy="6.0984E-05"
+        iyz="-8.04E-07"
+        izz="7.4643E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_ANK_ROLL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/L_ANK_ROLL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="l_ank_roll"
+    type="revolute">
+    <origin
+      xyz="0 0 -0.0385"
+      rpy="0 0 0" />
+    <parent
+      link="L_ANK_PITCH" />
+    <child
+      link="L_ANK_ROLL" />
+    <axis
+      xyz="-1 0 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+
+  <link
+    name="R_HIP_YAW">
+    <inertial>
+      <origin
+        xyz="0.0020262 0.0000 -0.0089335"
+        rpy="0 0 0" />
+      <mass
+        value="0.022437" />
+      <inertia
+        ixx="3.961E-06"
+        ixy="0.000"
+        ixz="-3.4E-08"
+        iyy="1.0931E-05"
+        iyz="0.0000"
+        izz="1.1907E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_HIP_YAW.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_HIP_YAW.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_hip_yaw"
+    type="revolute">
+    <origin
+      xyz="0 -0.041 -0.0497"
+      rpy="0 0 0" />
+    <parent
+      link="WAIST" />
+    <child
+      link="R_HIP_YAW" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="R_HIP_ROLL">
+    <inertial>
+      <origin
+        xyz="-0.021465 5.000E-05 -0.014510"
+        rpy="0 0 0" />
+      <mass
+        value="0.308" />
+      <inertia
+        ixx="1.19261E-04"
+        ixy="-1.038E-06"
+        ixz="1.4319E-05"
+        iyy="3.23349E-04"
+        iyz="0.302E-06"
+        izz="2.81948E-04" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_HIP_ROLL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_HIP_ROLL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_hip_roll"
+    type="revolute">
+    <origin
+      xyz="0 0 -0.0345"
+      rpy="0 0 0" />
+    <parent
+      link="R_HIP_YAW" />
+    <child
+      link="R_HIP_ROLL" />
+    <axis
+      xyz="1 0 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="R_HIP_PITCH">
+    <inertial>
+      <origin
+        xyz="0.000100 0.000428 -0.094865"
+        rpy="0 0 0" />
+      <mass
+        value="0.179" />
+      <inertia
+        ixx="1.67948E-05"
+        ixy="-2.17E-07"
+        ixz="-1.35E-07"
+        iyy="1.46953E-04"
+        iyz="-1.41E-07"
+        izz="5.0256E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_HIP_PITCH.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_HIP_PITCH.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_hip_pitch"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="R_HIP_ROLL" />
+    <child
+      link="R_HIP_PITCH" />
+    <axis
+      xyz="0 -1 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="R_KNEE">
+    <inertial>
+      <origin
+        xyz="0.0021571 6.7121E-05 -0.057639"
+        rpy="0 0 0" />
+      <mass
+        value="0.03206" />
+      <inertia
+        ixx="4.9412E-05"
+        ixy="0.0000"
+        ixz="8.92E-07"
+        iyy="3.5013E-05"
+        iyz="0.000"
+        izz="1.9930E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_KNEE.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_KNEE.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_knee"
+    type="revolute">
+    <origin
+      xyz="0.00012202 0 -0.12"
+      rpy="0 0 0.01704" />
+    <parent
+      link="R_HIP_PITCH" />
+    <child
+      link="R_KNEE" />
+    <axis
+      xyz="0 -1 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="R_ANK_PITCH">
+    <inertial>
+      <origin
+        xyz="-0.01465 -0.183E-03 0.014510"
+        rpy="0 0 0" />
+      <mass
+        value="0.308" />
+      <inertia
+       ixx="1.19252E-04"
+        ixy="-1.034E-06"
+        ixz="-1.4319E-05"
+        iyy="3.23349E-04"
+        iyz="-3.05E-07"
+        izz="2.81939E-04" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_ANK_PITCH.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_ANK_PITCH.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_ank_pitch"
+    type="revolute">
+    <origin
+      xyz="0 0 -0.12"
+      rpy="0 0 0" />
+    <parent
+      link="R_KNEE" />
+    <child
+      link="R_ANK_PITCH" />
+    <axis
+      xyz="0 1 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+  <link
+    name="R_ANK_ROLL">
+    <inertial>
+      <origin
+        xyz="0.00024893 -0.0052868 -0.030898"
+        rpy="0 0 0" />
+      <mass
+        value="0.052" />
+      <inertia
+        ixx="1.8195E-05"
+        ixy="0.435E-06"
+        ixz="5.80E-07"
+        iyy="6.0984E-05"
+        iyz="8.04E-07"
+        izz="7.4643E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_ANK_ROLL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://gtx3_description/meshes/R_ANK_ROLL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="r_ank_roll"
+    type="revolute">
+    <origin
+      xyz="0 0 -0.0385"
+      rpy="0 0 0" />
+    <parent
+      link="R_ANK_PITCH" />
+    <child
+      link="R_ANK_ROLL" />
+    <axis
+      xyz="1 0 0" />
+    <limit
+      lower="-2.8274"
+      upper="2.8274"
+      effort="1000"
+      velocity="100" />
+    <dynamics
+      damping="0.1"
+      friction="0" />
+  </joint>
+
+</robot>

@@ -29,12 +29,11 @@ chmod +x build_ros.sh
 
 ## 新增依赖
 1. KDL \
-   安装orocos kdl：https://www.orocos.org/wiki/Installation_Manual.html   (下载master branch就可以)\
+   安装orocos kdl：https://www.orocos.org/wiki/Installation_Manual.html   \
    安装kdl_parser：https://github.com/ros/kdl_parser
-   (下载默认的版本，可以正常安装，branch melodic无法正常安装)
    
 ## 注意事项
-1. urdf文件路径
+1. urdf文件路径 \
    如有变动，代码中对应位置需要修改，更新成自己的urdf文件路径
 
 2. 参数文件有更新，最新版本为 c_i_640480.yaml

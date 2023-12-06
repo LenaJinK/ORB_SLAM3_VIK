@@ -31,7 +31,7 @@ endif()
 
 LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
 
-find_package(OpenCV 4 REQUIRED)
+find_package(OpenCV 3 REQUIRED)
 MESSAGE("OPENCV VERSION:")
 MESSAGE(${OpenCV_VERSION})
 
@@ -50,11 +50,6 @@ else()
     message (FATAL_ERROR "Cannot find Boost")
 endif()
 
-#[[set(PCL_DIR "/usr/local/share/pcl-1.13")
-find_package( PCL 1.13 REQUIRED )  # todo new
-MESSAGE("PCL VERSION:")
-MESSAGE(${PCL_VERSION})]]
-
 include_directories(
 ${PROJECT_SOURCE_DIR}
 ${PROJECT_SOURCE_DIR}/include
@@ -66,11 +61,7 @@ ${Sophus_INCLUDE_DIRS}
 ${FMT_INCLUDE_DIRS}
 ${orocos_kdl_INCLUDE_DIRS}
 ${kdl_parser_INCLUDE_DIRS}
-#        ${PCL_INCLUDE_DIRS}   # todo new
 )
-
-#[[add_definitions( ${PCL_DEFINITIONS} )    # todo new
-link_directories( ${PCL_LIBRARY_DIRS} )]]
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
 
@@ -148,7 +139,6 @@ ${Pangolin_LIBRARIES}
 ${Sophus_LIBRARIES}
         ${kdl_LIBRARIES}
         ${kdl_parser_LIBRARIES}
-#        ${PCL_LIBRARIES}    # todo new
 ${THIRD_PARTY_LIBS} fmt::fmt
 ${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
 ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so

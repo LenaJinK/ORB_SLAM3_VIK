@@ -1,4 +1,4 @@
 ## 2.0版本修改:
-1. rviz可视化
-   1. 添加MapPublisher类，用于发布rviz所需的mark类型信息\
-   进行中。。。
+1. 稠密建图
+   1. 添加cloudmapping类
+   报错：ROS环境下编译，pcl报错

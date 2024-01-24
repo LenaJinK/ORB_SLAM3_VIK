@@ -60,6 +60,7 @@ Map::~Map()
 void Map::AddKeyFrame(KeyFrame *pKF)
 {
     unique_lock<mutex> lock(mMutexMap);
+
     if(mspKeyFrames.empty()){
         cout << "First KF:" << pKF->mnId << "; Map init KF:" << mnInitKFid << endl;
         mnInitKFid = pKF->mnId;
@@ -75,6 +76,8 @@ void Map::AddKeyFrame(KeyFrame *pKF)
     {
         mpKFlowerID = pKF;
     }
+
+
 //    mbMapUpdated=true;   // todo new 有新的关键帧加入，所以地图更新了
 
 }

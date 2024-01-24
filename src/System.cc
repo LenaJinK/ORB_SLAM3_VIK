@@ -85,11 +85,6 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         cout << "Open settings file at: " << strSettingsFile << endl;
     }
 
-    // todo new 读取点云参数 for point cloud resolution
-    float resolution = fsSettings["PointCloudMapping.Resolution"];
-    float meank = fsSettings["meank"];
-    float thresh = fsSettings["thresh"];
-
     cv::FileNode node = fsSettings["File.version"];
     if(!node.empty() && node.isString() && node.string() == "1.0"){
         settings_ = new Settings(strSettingsFile,mSensor);
@@ -145,7 +140,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         // step 4 创建关键帧数据库
         mpKeyFrameDatabase = new KeyFrameDatabase(*mpVocabulary);
 
-        //Create the Atlas
+        //Create the Atlasf
         // Step 5 创建多地图，参数0表示初始化关键帧id为0
         cout << "Initialization of Atlas from scratch " << endl;
         mpAtlas = new Atlas(0);
@@ -208,18 +203,17 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     mpMapDrawer = new MapDrawer(mpAtlas, strSettingsFile, settings_);
 
     // todo new Initialize pointcloud mapping
-    mpPointCloudMapping = make_shared<PointCloudMapping>( resolution,meank,thresh );
-    cout<< "Initialize mpPointCloudMapping: " << resolution<<"\t"<<meank<<"\t"<<thresh<<endl;// todo test
+    mpPointCloudMapping = std::allocate_shared<PointCloudMapping>(Eigen::aligned_allocator<PointCloudMapping>(), strSettingsFile, bUseViewer);
+    cout << "Initialize pointcloud mapping done!" << endl;
 
     //Initialize the Tracking thread
     //(it will live in the main thread of execution, the one that called this constructor)
     // 创建跟踪线程（主线程）,不会立刻开启,会在对图像和imu预处理后在main主线程种执行
-//    cout << "Seq. Name: " << strSequence << endl;
-    mpTracker = new Tracking(this, mpVocabulary, mpFrameDrawer, mpMapDrawer,mpAtlas, mpKeyFrameDatabase, strSettingsFile, mSensor, settings_, strSequence);
- /*   mpTracker = new Tracking(this, mpVocabulary, mpFrameDrawer, mpMapDrawer,mpAtlas,
-                             mpPointCloudMapping,
-                             mpKeyFrameDatabase, strSettingsFile, mSensor, settings_, strSequence);  // todo new 增加mpPointCloudMapping
-*/
+    mpTracker = new Tracking(this, mpVocabulary, mpFrameDrawer, mpMapDrawer,mpAtlas,
+                             mpPointCloudMapping,  //todo new tracker 增加mpPointCloudMapping
+                             mpKeyFrameDatabase, strSettingsFile, mSensor, settings_, strSequence);
+    cout<<"initralize tracker done!"<<endl;
+
     //Initialize the Local Mapping thread and launch
     //创建并开启local mapping线程
     mpLocalMapper = new LocalMapping(this, mpAtlas, mSensor==MONOCULAR || mSensor==IMU_MONOCULAR,
@@ -242,8 +236,10 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     // Initialize the Loop Closing thread and launch
     // mSensor!=MONOCULAR && mSensor!=IMU_MONOCULAR
     // 创建并开启闭环线程
-    mpLoopCloser = new LoopClosing(mpAtlas, mpKeyFrameDatabase, mpVocabulary, mSensor!=MONOCULAR, activeLC,mpPointCloudMapping); //todo 增加mpPointCloudMapping
+    mpLoopCloser = new LoopClosing(mpAtlas, mpKeyFrameDatabase, mpVocabulary, mSensor!=MONOCULAR, activeLC,
+                                   mpPointCloudMapping); //todo new loopcloser增加mpPointCloudMapping
     mptLoopClosing = new thread(&ORB_SLAM3::LoopClosing::Run, mpLoopCloser);
+    cout<<"initralize loopcloser done!"<<endl;
 
     //Set pointers between threads
     // 设置线程间的指针
@@ -705,7 +701,7 @@ void System::SaveTrajectoryTUM(const string &filename)
     Sophus::SE3f Two = vpKFs[0]->GetPoseInverse();
 
     ofstream f;
-    f.open("/home/lenajin/Documents/mycode/my_ORB3_modifying/dataset/"+filename);
+    f.open("/home/lenajin/Documents/ORB_SLAM3_VIK/trajectory/"+filename);
     f << fixed;
 
     // Frame pose is stored relative to its reference keyframe (which is optimized by BA and pose graph).
@@ -745,7 +741,7 @@ void System::SaveTrajectoryTUM(const string &filename)
         f << setprecision(6) << *lT << " " <<  setprecision(9) << twc(0) << " " << twc(1) << " " << twc(2) << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << endl;
     }
     f.close();
-    // cout << endl << "trajectory saved!" << endl;
+     cout << endl << "trajectory saved!" << endl;
 }
 
 void System::SaveKeyFrameTrajectoryTUM(const string &filename)
@@ -758,7 +754,7 @@ void System::SaveKeyFrameTrajectoryTUM(const string &filename)
     // Transform all keyframes so that the first keyframe is at the origin.
     // After a loop closure the first keyframe might not be at the origin.
     ofstream f;
-    f.open("/home/lenajin/Documents/my_ORB3_modifying/dataset/"+filename); // notice 轨迹保存位置
+    f.open("/home/lenajin/Documents/ORB_SLAM3_VIK/trajectory/"+filename); // notice 轨迹保存位置
     f << fixed;
 
     for(size_t i=0; i<vpKFs.size(); i++)
@@ -1699,7 +1695,7 @@ string System::CalculateCheckSum(string filename, int type)
     return checksum;
 }
 
-// todo new function*3
+// todo new function*2
 void System::save()
 {
     mpPointCloudMapping->save();

@@ -17,135 +17,178 @@
  *
  */
 
-#include "pointcloudmapping.h"
-#include <KeyFrame.h>
+// OpenCV
+#include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
-#include <pcl/visualization/cloud_viewer.h>
+
+// PCL
+#include <pcl/sample_consensus/sac_model_perpendicular_plane.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/filters/extract_indices.h>
 #include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/filters/passthrough.h>
+
+// ORB_SLAM2
+#include "pointcloudmapping.h"
+#include "KeyFrame.h"
 #include "Converter.h"
 #include "PointCloude.h"
 #include "System.h"
+//#include "TicToc.h"
 
+// STL
+#include <chrono>
 
+bool firstKF = true;
 int currentloopcount = 0;
 
-/**
- * @param resolution_ :体素大小分辨率，分辨率越小，单个体素越小
- * @param meank_ ： meank_ 为在进行统计时考虑查询邻近点个数
- * @param thresh_：设置距离阈值，其公式是 mean + global stddev_mult * global stddev，即mean+1.0*stddev
- * @return ：无
- */
-PointCloudMapping::PointCloudMapping(double resolution_,double meank_,double thresh_)
-{
-    this->resolution = resolution_;      //分辨率
-    this->meank = thresh_;
-    this->thresh = thresh_;
-    statistical_filter.setMeanK(meank);    //统计估计滤波参数
-    statistical_filter.setStddevMulThresh(thresh);
-    voxel.setLeafSize( resolution, resolution, resolution);   //设置每个体素子叶分辨率
-    globalMap = boost::make_shared< PointCloud >( );
 
-    viewerThread = make_shared<thread>( bind(&PointCloudMapping::viewer, this ) );
+PointCloudMapping::PointCloudMapping(const std::string &strSettingPath, bool bUseViewer) :
+        mbCloudBusy(false), mbLoopBusy(false), mbStop(false), mbShutDownFlag(false),
+        mpPclGlobalMap(new PointCloudMapping::PointCloud()), mpPclObstacle(new PointCloud()), mpPclGroundPlane(new PointCloud()),
+        mPlaneCoeffs(0, 0, 1, 0), mLastPlaneCoeffs(0, 0, 1, 0), mbPointCloudMapUpdated(false),
+        mbUseViewer(bUseViewer)
+// mViewer("viewer")
+{
+    // parse parameters
+    cv::FileStorage fsSetting = cv::FileStorage(strSettingPath, cv::FileStorage::READ);
+    cv::FileNode fsPointCloudMapping = fsSetting["PointCloudMapping"];
+
+    // set initial Tbc: footprint<--optical
+    cv::FileNode fsTbc = fsPointCloudMapping["Tbc"];
+    Eigen::Vector3d tbc(fsTbc["x"], fsTbc["y"], fsTbc["z"]);
+    Eigen::Matrix3d Rbc;
+    Rbc = Eigen::AngleAxisd(fsTbc["roll"],  Eigen::Vector3d::UnitX())
+          * Eigen::AngleAxisd(fsTbc["pitch"], Eigen::Vector3d::UnitY())
+          * Eigen::AngleAxisd(fsTbc["yaw"],   Eigen::Vector3d::UnitZ());
+    updateTbc(Rbc, tbc);
+
+    // voxel grid filter
+    resolution_ = fsPointCloudMapping["Resolution"];
+    voxel.setLeafSize( resolution_, resolution_, resolution_);
+
+    // statistical filter
+    cv::FileNode fsStatisticFilter = fsPointCloudMapping["StatisticFilter"];
+    meank_ = fsStatisticFilter["MeanK"];
+    thresh_ = fsStatisticFilter["Thres"];
+    statistical_filter.setMeanK(meank_);
+    statistical_filter.setStddevMulThresh(meank_);
+
+    // plane segmentation
+    cv::FileNode fsPlaneSegmentation = fsPointCloudMapping["PlaneSegmentation"];
+    mbUsePlaneSegmentation = int(fsPlaneSegmentation["UsePlaneSegmentation"]);
+    mbSegmentPerFrame = int(fsPlaneSegmentation["SegmentPerFrame"]);
+    mfPlaneDistThres = fsPlaneSegmentation["PlaneDistThres"];
+    mfFramePlaneDistThres = fsPlaneSegmentation["FramePlaneDistThres"];
+
+    cout << "---" << endl;
+    cout << "Point Cloud Thread Parameters:" << endl;
+    cout << "- Tbc: " << endl << mTbc << endl;
+    cout << "- CameraHeight: " << mfCameraHeight << endl;
+    cout << "- Resolution: " << resolution_ << endl;
+    cout << "- StatisticFilter " << endl;
+    cout << "\t- MeanK: " <<  meank_ << endl;
+    cout << "\t- Thres: " << thresh_ << endl;
+    cout << "- PlaneSegmentation: " << endl;
+    cout << "\t- UsePlaneSegmentation: " << mbUsePlaneSegmentation << endl;
+    cout << "\t- SegmentPerFrame: " << mbSegmentPerFrame << endl;
+    cout << "\t- PlaneDistThres: " << mfPlaneDistThres << endl;
+    cout << "\t- FramePlaneDistThres: " << mfFramePlaneDistThres << endl;
+
+    // start point cloud mapping thread
+    mThdRunning = make_shared<thread>( bind(&PointCloudMapping::run, this ) );
 }
 
-/**
- * @brief 关闭建图线程
- */
+
 void PointCloudMapping::shutdown()
 {
     {
         unique_lock<mutex> lck(shutDownMutex);
-        shutDownFlag = true;
+        mbShutDownFlag = true;
         keyFrameUpdated.notify_one();
     }
-    //等待PointCloudMapping_viewer 本线程执行结束再执行系统主线程
-    viewerThread->join();
+    mThdRunning->join();
 }
 
 
-/**
- * @brief 插入关键帧
- * @param kf    关键帧
- * @param color 关键帧彩色图
- * @param depth 关键帧深度图
- * @param idk   第idk个关键帧
- * @param vpKFs 获取全部关键帧
- * @function    在点云地图里插入关键帧
- */
 void PointCloudMapping::insertKeyFrame(KeyFrame* kf, cv::Mat& color, cv::Mat& depth,int idk,vector<KeyFrame*> vpKFs)
 {
-    cout<<"receive a keyframe, id = "<<idk<<" 第"<<kf->mnId<<"个"<<endl;
+    cout<<"receive a keyframe, Frame id = "<< idk << " , KF No." << kf->mnId << endl;
     //cout<<"vpKFs数量"<<vpKFs.size()<<endl;
-    unique_lock<mutex> lck(keyframeMutex);
-    keyframes.push_back( kf );
-    currentvpKFs = vpKFs;
-    //colorImgs.push_back( color.clone() );
-    //depthImgs.push_back( depth.clone() );
-    PointCloude pointcloude;
-    pointcloude.pcID = idk;
-    pointcloude.T = ORB_SLAM3::Converter::toSE3Quat( kf->GetPose() );  //获取关键帧位姿
-    pointcloude.pcE = generatePointCloud(kf,color,depth);  //迭代关键帧点云
-    pointcloud.push_back(pointcloude);
-    keyFrameUpdated.notify_one();   //通知线程开锁
+    if(idk >= 100){
+        unique_lock<mutex> lck(keyframeMutex);
+        keyframes.push_back( kf );
+        currentvpKFs = vpKFs;
+        //colorImgs.push_back( color.clone() );
+        //depthImgs.push_back( depth.clone() );
+        PointCloude pointcloude;
+        pointcloude.pcID = idk;
+        pointcloude.T = ORB_SLAM3::Converter::toSE3Quat( kf->GetPose() );
+        pointcloude.pcE = generatePointCloud(kf,color,depth);
+        pointcloud.push_back(pointcloude);
+        keyFrameUpdated.notify_one();
+    }
+
 }
 
-/**
- * @param kf    关键帧
- * @param color 彩色图
- * @param depth 深度图
- * @return 关键帧点云
- */
-pcl::PointCloud< PointCloudMapping::PointT >::Ptr PointCloudMapping::generatePointCloud(KeyFrame* kf, cv::Mat& color, cv::Mat& depth)//,Eigen::Isometry3d T
+
+PointCloudMapping::PointCloud::Ptr PointCloudMapping::generatePointCloud(KeyFrame* kf, cv::Mat& color, cv::Mat& depth)//,Eigen::Isometry3d T
 {
-    //新建一个点云
     PointCloud::Ptr tmp( new PointCloud() );
     // point cloud is null ptr
-    //对点云进行
+    int pt_cnt = 0;
     for ( int m=0; m<depth.rows; m+=3 )
     {
         for ( int n=0; n<depth.cols; n+=3 )
         {
-            float d = depth.ptr<float>(m)[n];  //获取（m,n）处的深度值
-            if (d < 0.01 || d>5)            //滤除设备可靠深度范围之外点
+            float d = depth.ptr<float>(m)[n];
+            if (isnan(d) || d < 0.01 || d>5)
                 continue;
             PointT p;
-
-            //相机模型，只计算关键帧的点云
-            //座标系与pcl座标系相反，所以可以p.z=-d
             p.z = d;
             p.x = ( n - kf->cx) * p.z / kf->fx;
             p.y = ( m - kf->cy) * p.z / kf->fy;
 
-            //彩色图计算点云颜色
             p.b = color.ptr<uchar>(m)[n*3];
             p.g = color.ptr<uchar>(m)[n*3+1];
             p.r = color.ptr<uchar>(m)[n*3+2];
 
             tmp->points.push_back(p);
+            pt_cnt++;
         }
     }
+    //debug depth log
+//    cout << "data: " << endl;
+//    if (firstKF)
+//    {
+//        cout << depth << endl;
+//        firstKF = false;
+//    }
+//    cout << "Size: " << depth.rows << ", " << depth.cols << endl;
+//    cout << "Deal " << pt_cnt << " points." << endl;
+//    cout << "Depth means: " << cv::mean(depth) << endl;
+//    cout << "----------------------------------------" << endl;
 
     //Eigen::Isometry3d T = ORB_SLAM2::Converter::toSE3Quat( kf->GetPose() );
     //PointCloud::Ptr cloud(new PointCloud);
     //pcl::transformPointCloud( *tmp, *cloud, T.inverse().matrix());
     //cloud->is_dense = false;
 
-//    cout<<"generate point cloud for kf "<<kf->mnId<<", size="<<cloud->points.size()<<endl;
+    //cout<<"generate point cloud for kf "<<kf->mnId<<", size="<<cloud->points.size()<<endl;
     return tmp;
 }
 
-/*
- * @brief 显示点云线程
- */
-void PointCloudMapping::viewer()
+
+void PointCloudMapping::run()
 {
-    pcl::visualization::CloudViewer viewer("viewer");
-    while(1)
+    pcl::visualization::CloudViewer viewer("point cloud map");  // todo new view window
+
+    while(true)
     {
 
         {
             unique_lock<mutex> lck_shutdown( shutDownMutex );
-            if (shutDownFlag)
+            if (mbShutDownFlag)
             {
                 break;
             }
@@ -161,131 +204,604 @@ void PointCloudMapping::viewer()
             unique_lock<mutex> lck( keyframeMutex );
             N = keyframes.size();
         }
-        if(loopbusy || bStop)
+
+        // loop busy, or thread request stop
+        if(mbLoopBusy || mbStop)
         {
-            //cout<<"loopbusy || bStop"<<endl;
+            cerr << "Point Cloud Mapping thread is Looping or has terminated!" << endl;
             continue;
         }
-        //cout<<lastKeyframeSize<<"    "<<N<<endl;
+
+        // no keyframe insert
         if(lastKeyframeSize == N)
-            cloudbusy = false;
-        //cout<<"待处理点云个数 = "<<N<<endl;
-        cloudbusy = true;
+            mbCloudBusy = false;
+        mbCloudBusy = true;
+
+        setPointCloudMapUpdatedFlag(false);
+        cout << "******************* Running PointCloudMapping thread wake. *******************" << endl;
+
+        // get extrinsic matrix
+        Eigen::Matrix4d Tbc;
+        getTbc(Tbc);
+        Eigen::Matrix4d Tcb = Tbc.inverse();
+
+        // create new PointCloud
+        PointCloud::Ptr pNewCloud(new PointCloud());
+        PointCloud::Ptr pNewPlaneCloud(new PointCloud());
         for ( size_t i=lastKeyframeSize; i<N ; i++ )
         {
+            if (mbUsePlaneSegmentation && mbSegmentPerFrame)
+            {
+                // perform plane segmentation
+                PointCloud::Ptr pFrame (new PointCloud);
+                pFrame = pointcloud[i].pcE->makeShared();
+                PointCloud::Ptr pPlane (new PointCloud);
 
+                // mViewer.showCloud(pFrame);
 
-            PointCloud::Ptr p (new PointCloud);
-            //将点云数据转换成ascii码形式存储在pcd文件中
-            //1、源点云   2、转变后的点云   3、位姿变换矩阵
-            pcl::transformPointCloud( *(pointcloud[i].pcE), *p, pointcloud[i].T.inverse().matrix());
-            cout<<"处理好第i个点云"<<i<<endl;
-            //  转换后的点云叠加存储在globalMap中
-            *globalMap += *p;
-            //PointCloud::Ptr tmp(new PointCloud());
-            //voxel.setInputCloud( globalMap );
-            // voxel.filter( *tmp );
-            //globalMap->swap( *tmp );
+                // perform plane segmentation
+                pcl::transformPointCloud(*pFrame, *pFrame, Tbc);
+                framePlaneSegmentation(pFrame, pPlane);
 
+                // return to optical frame
+                pcl::transformPointCloud(*pFrame, *pFrame, Tcb);
+                pcl::transformPointCloud(*pPlane, *pPlane, Tcb);
 
+                // transform with Twc
+                pcl::transformPointCloud(*pFrame, *pFrame, pointcloud[i].T.inverse().matrix());
+                pcl::transformPointCloud(*pPlane, *pPlane, pointcloud[i].T.inverse().matrix());
+
+//                mViewer.showCloud(pPlane);
+
+                // transform with Tbc
+                pcl::transformPointCloud(*pFrame, *pFrame, Tbc);
+                pcl::transformPointCloud(*pPlane, *pPlane, Tbc);
+
+                *pNewCloud += *pFrame;
+                *pNewPlaneCloud += *pPlane;
+            }
+            else
+            {
+                PointCloud::Ptr p (new PointCloud);
+                pcl::transformPointCloud( *(pointcloud[i].pcE), *p, pointcloud[i].T.inverse().matrix());
+                pcl::transformPointCloud( *p, *p, Tbc);
+                *pNewCloud += *p;
+            }
         }
 
-        // depth filter and statistical removal
-        //这里的滤波只是显示上的滤波，不会改变globalMap的值
-        PointCloud::Ptr tmp1 ( new PointCloud );
-
-        statistical_filter.setInputCloud(globalMap);   //对globalMap进行统计学去噪
-        statistical_filter.filter( *tmp1 );         // 执行去噪计算并保存点到 tmp1
-
-        //体素滤波器voxel filter进行降采样
-        PointCloud::Ptr tmp(new PointCloud());
-        voxel.setInputCloud( tmp1 );
-        voxel.filter( *globalMap );
-        //globalMap->swap( *tmp );
-        viewer.showCloud( globalMap );
-        cout<<"show global map, size="<<N<<"   "<<globalMap->points.size()<<endl;
-        lastKeyframeSize = N;
-        cloudbusy = false;
-        //*globalMap = *tmp1;
-
-        //if()
-        //{
-
-        //}
-    }
-}
-
-/**
- * @brief 保存pcd地图
- */
-void PointCloudMapping::save()
-{
-    pcl::io::savePCDFile( "result.pcd", *globalMap );
-    cout<<"globalMap save finished"<<endl;
-}
-
-/**
- * @brief 更新点云*/
-void PointCloudMapping::updatecloud()
-{
-    if(!cloudbusy)
-    {
-        loopbusy = true;
-        cout<<"startloopmappoint"<<endl;
-        PointCloud::Ptr tmp1(new PointCloud);
-        for (int i=0;i<currentvpKFs.size();i++)
+        // perform filter
+        if (mbUsePlaneSegmentation && mbSegmentPerFrame)
         {
-            for (int j=0;j<pointcloud.size();j++)
-            {
-                if(pointcloud[j].pcID==currentvpKFs[i]->mnFrameId)
-                {
-                    Eigen::Isometry3d T = ORB_SLAM3::Converter::toSE3Quat(currentvpKFs[i]->GetPose() );
-                    PointCloud::Ptr cloud(new PointCloud);
-                    pcl::transformPointCloud( *pointcloud[j].pcE, *cloud, T.inverse().matrix());
-                    *tmp1 +=*cloud;
+            // filter obstacle map
+            *pNewCloud += *mpPclObstacle;
+            // depth filter and statistical removal
+            PointCloud::Ptr pNewCloudOutliersFilter(new PointCloud());
+            statistical_filter.setInputCloud(pNewCloud);
+            statistical_filter.filter( *pNewCloudOutliersFilter );
 
-                    cout<<"第pointcloud"<<j<<"与第vpKFs"<<i<<"匹配"<<endl;
-                    continue;
+            // voxel grid filter
+            PointCloud::Ptr pNewCloudVoxelFilter(new PointCloud());
+            voxel.setInputCloud( pNewCloudOutliersFilter );
+            voxel.filter( *pNewCloudVoxelFilter );
+            {
+                unique_lock<mutex> lock(mMtxPlaneSegmentation);
+                mpPclObstacle->swap(*pNewCloudVoxelFilter);
+            }
+
+            // filter plane
+            *pNewPlaneCloud += *mpPclGroundPlane;
+            // voxel grid filter
+            PointCloud::Ptr pNewPlaneVoxelFilter(new PointCloud());
+            voxel.setInputCloud( pNewPlaneCloud );
+            voxel.filter( *pNewPlaneVoxelFilter );
+            {
+                unique_lock<mutex> lock(mMtxPlaneSegmentation);
+                mpPclGroundPlane->swap(*pNewPlaneVoxelFilter);
+            }
+
+//            mViewer.showCloud(mpPclGroundPlane);
+
+            // gather to get whole map
+            {
+                unique_lock<mutex> lock(mMtxPointCloudUpdated);
+                mpPclGlobalMap = mpPclObstacle->makeShared();
+                *mpPclGlobalMap += *mpPclGroundPlane;
+            }
+        }
+        else
+        {
+            *pNewCloud += *mpPclGlobalMap;
+
+            // depth filter and statistical removal
+            PointCloud::Ptr pNewCloudOutliersFilter(new PointCloud());
+            statistical_filter.setInputCloud(pNewCloud);
+            statistical_filter.filter( *pNewCloudOutliersFilter );
+
+            // voxel grid filter
+            PointCloud::Ptr pNewCloudVoxelFilter(new PointCloud());
+            voxel.setInputCloud( pNewCloudOutliersFilter );
+            voxel.filter( *pNewCloudVoxelFilter );
+            {
+                unique_lock<mutex> lock(mMtxPointCloudUpdated);
+                mpPclGlobalMap->swap(*pNewCloudVoxelFilter);
+            }
+        }
+        cout << "show global map, size=" << N << "   " << mpPclGlobalMap->points.size() << endl;
+
+        // estimate plane normal vector
+        if (mbUsePlaneSegmentation && mbSegmentPerFrame)
+        {
+            if (mpPclGroundPlane->empty())
+            {
+                cout << "No segmented plane need to fit." << endl;
+            }
+            else
+            {
+                PointCloud::Ptr pFramePlane(new PointCloud());
+                pFramePlane = mpPclGroundPlane->makeShared();
+                PointCloud::Ptr pSegmentedPlane(new PointCloud());
+                Eigen::Vector4d planeCoeffs;
+                pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+                bool bPlaneSegmentation = planeSACSegmentation(pFramePlane, pSegmentedPlane, planeCoeffs, mLastPlaneCoeffs, inliers);
+                if (bPlaneSegmentation)
+                {
+                    unique_lock<mutex> lock(mMtxPlaneSegmentation);
+                    mPlaneCoeffs = planeCoeffs;
+                    mLastPlaneCoeffs = planeCoeffs;
                 }
             }
         }
-        cout<<"finishloopmap"<<endl;
-        PointCloud::Ptr tmp2(new PointCloud());
-        voxel.setInputCloud( tmp1 );
-        voxel.filter( *tmp2 );
-        globalMap->swap( *tmp2 );
-        //viewer.showCloud( globalMap );
-        loopbusy = false;
-        //cloudbusy = true;
-        loopcount++;
+        else if (mbUsePlaneSegmentation)
+        {
+            PointCloud::Ptr pPclObstacle(new PointCloud());
+            pPclObstacle = mpPclGlobalMap->makeShared();
+            PointCloud::Ptr pPclGroundPlane = PointCloud::Ptr(new PointCloud());
+            Eigen::Vector4d planeCoeffs;
+            pcl::PointIndices::Ptr pInliers(new pcl::PointIndices());
+            bool bPlaneSegmentation = planeSACSegmentation(pPclObstacle, pPclGroundPlane, planeCoeffs, mLastPlaneCoeffs, pInliers);
+            {
+                unique_lock<mutex> lock(mMtxPlaneSegmentation);
+                if (bPlaneSegmentation)
+                {
+                    mpPclGroundPlane = pPclGroundPlane;
+                    mPlaneCoeffs = planeCoeffs;
+                }
+                mpPclObstacle = pPclObstacle;
+            }
+        }
 
-        //*globalMap = *tmp1;
+        // visualize, if needed
+        viewer.showCloud( mpPclGlobalMap ); // todo new view window
+
+        // update flag
+        lastKeyframeSize = N;
+        mbCloudBusy = false;
+        setPointCloudMapUpdatedFlag(true);
     }
 }
 
-//获取全局点云地图点，智能指针，return 回来
-pcl::PointCloud<PointCloudMapping::PointT>::Ptr PointCloudMapping::getGlobalMap() {
 
-    return this->globalMap;
+void PointCloudMapping::save()
+{
+    pcl::io::savePCDFile( "result.pcd", *mpPclGlobalMap );
+    cout<<"globalMap save finished"<<endl;
 }
 
-// add
-bool PointCloudMapping::isPointCloudMapUpdated()
+
+void PointCloudMapping::updateCloseLoopCloud()
 {
-    unique_lock<mutex> lock(mMtxPointCloudUpdated);
-    return mbPointCloudMapUpdated;
+    while (mbCloudBusy)
+    {
+        std::cout << "CloseLooping thread has activate point cloud map reconstruct, "
+                     "but PointCloudMapping thread is busy currently." << std::endl;
+        usleep(1000);
+    }
+    mbLoopBusy = true;
+    std::cout << "******************* Start Loop Mapping *******************" << std::endl;
+
+    // transform the whole point cloud according to extrinsic matrix
+    Eigen::Matrix4d Tbc;
+    getTbc(Tbc);
+    Eigen::Matrix4d Tcb = Tbc.inverse();
+
+    // reset new point cloud map
+    PointCloud::Ptr pNewCloud(new PointCloud());
+    PointCloud::Ptr pNewPlaneCloud(new PointCloud());
+    cout << "Current KeyFrame size: " << currentvpKFs.size() << endl;
+    cout << "Curremt PointCloude size: " << pointcloud.size() << endl;
+    for (int i=0;i<currentvpKFs.size();i++)
+    {
+        for (int j=0;j<pointcloud.size();j++)
+        {
+            if(pointcloud[j].pcID==currentvpKFs[i]->mnFrameId)
+            {
+                cout << "Start dealing with KeyFrame [" << i << "]" << endl;
+                Eigen::Isometry3d T = ORB_SLAM3::Converter::toSE3Quat(currentvpKFs[i]->GetPose() );
+                if (mbUsePlaneSegmentation && mbSegmentPerFrame)
+                {
+                    PointCloud::Ptr pFrame (new PointCloud);
+                    pFrame = pointcloud[j].pcE->makeShared();
+                    PointCloud::Ptr pPlane (new PointCloud);
+
+                    // perform plane segmentation
+                    pcl::transformPointCloud(*pFrame, *pFrame, Tbc);
+                    framePlaneSegmentation(pFrame, pPlane);
+
+                    // return to optical frame
+                    pcl::transformPointCloud(*pFrame, *pFrame, Tcb);
+                    pcl::transformPointCloud(*pPlane, *pPlane, Tcb);
+
+                    // transform with Twc
+                    pcl::transformPointCloud(*pFrame, *pFrame, T.inverse().matrix());
+                    pcl::transformPointCloud(*pPlane, *pPlane, T.inverse().matrix());
+
+                    // transform with Tbc
+                    pcl::transformPointCloud(*pFrame, *pFrame, Tbc);
+                    pcl::transformPointCloud(*pPlane, *pPlane, Tbc);
+                    *pNewCloud += *pFrame;
+                    *pNewPlaneCloud += *pPlane;
+                }
+                else
+                {
+                    PointCloud::Ptr p (new PointCloud);
+                    pcl::transformPointCloud( *(pointcloud[j].pcE), *p, T.inverse().matrix());
+                    pcl::transformPointCloud( *p, *p, Tbc);
+                    *pNewCloud += *p;
+                }
+                continue;
+            }
+        }
+    }
+    cout << "Gather all KeyFrame complete." << endl;
+
+    if (mbUsePlaneSegmentation && mbSegmentPerFrame)
+    {
+        // filter obstacle map
+        *pNewCloud += *mpPclObstacle;
+        // depth filter and statistical removal
+        //! Prohibit it because it is too time-costly in updating close loop point cloud
+        // PointCloud::Ptr pNewCloudOutliersFilter(new PointCloud());
+        // statistical_filter.setInputCloud(pNewCloud);
+        // statistical_filter.filter( *pNewCloudOutliersFilter );
+
+        // voxel grid filter
+        PointCloud::Ptr pNewCloudVoxelFilter(new PointCloud());
+        voxel.setInputCloud( pNewCloud );
+        voxel.filter( *pNewCloudVoxelFilter );
+        {
+            unique_lock<mutex> lock(mMtxPlaneSegmentation);
+            mpPclObstacle->swap(*pNewCloudVoxelFilter);
+        }
+
+        // filter plane
+        *pNewPlaneCloud += *mpPclGroundPlane;
+        // voxel grid filter
+        PointCloud::Ptr pNewPlaneVoxelFilter(new PointCloud());
+        voxel.setInputCloud( pNewPlaneCloud );
+        voxel.filter( *pNewPlaneVoxelFilter );
+        {
+            unique_lock<mutex> lock(mMtxPlaneSegmentation);
+            mpPclGroundPlane->swap(*pNewPlaneVoxelFilter);
+        }
+
+        // gather to get whole map
+        {
+            unique_lock<mutex> lock(mMtxPointCloudUpdated);
+            mpPclGlobalMap = mpPclObstacle->makeShared();
+            *mpPclGlobalMap += *mpPclGroundPlane;
+        }
+    }
+    else
+    {
+        // depth filter and statistical removal
+        //! Prohibit it because it is too time-costly in updating close loop point cloud
+        // PointCloud::Ptr pNewCloudOutliersFilter(new PointCloud());
+        // statistical_filter.setInputCloud(pNewCloud);
+        // statistical_filter.filter( *pNewCloudOutliersFilter );
+
+        // voxel grid filter
+        PointCloud::Ptr pNewCloudVoxelFilter(new PointCloud());
+        voxel.setInputCloud(pNewCloud);
+        voxel.filter( *pNewCloudVoxelFilter );
+        {
+            unique_lock<mutex> lock(mMtxPointCloudUpdated);
+            mpPclGlobalMap->swap(*pNewCloudVoxelFilter);
+        }
+    }
+
+    // estimate plane normal vector
+    if (mbUsePlaneSegmentation && mbSegmentPerFrame)
+    {
+        PointCloud::Ptr pFramePlane(new PointCloud());
+        pFramePlane = mpPclGroundPlane->makeShared();
+        PointCloud::Ptr pSegmentedPlane(new PointCloud());
+        Eigen::Vector4d planeCoeffs;
+        pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+        bool bPlaneSegmentation = planeSACSegmentation(pFramePlane, pSegmentedPlane, planeCoeffs, mLastPlaneCoeffs, inliers);
+        if (bPlaneSegmentation)
+        {
+            unique_lock<mutex> lock(mMtxPlaneSegmentation);
+            mPlaneCoeffs = planeCoeffs;
+            mLastPlaneCoeffs = planeCoeffs;
+        }
+    }
+    else if (mbUsePlaneSegmentation)
+    {
+        PointCloud::Ptr pPclObstacle(new PointCloud());
+        pPclObstacle = mpPclGlobalMap->makeShared();
+        PointCloud::Ptr pPclGroundPlane = PointCloud::Ptr(new PointCloud());
+        Eigen::Vector4d planeCoeffs;
+        pcl::PointIndices::Ptr pInliers(new pcl::PointIndices());
+        bool bPlaneSegmentation = planeSACSegmentation(pPclObstacle, pPclGroundPlane, planeCoeffs, mLastPlaneCoeffs, pInliers);
+        {
+            unique_lock<mutex> lock(mMtxPlaneSegmentation);
+            if (bPlaneSegmentation)
+            {
+                mpPclGroundPlane = pPclGroundPlane;
+                mPlaneCoeffs = planeCoeffs;
+            }
+            mpPclObstacle = pPclObstacle;
+        }
+    }
+
+    // update flag
+    mbLoopBusy = false;
+    loopcount++;
+    setPointCloudMapUpdatedFlag(true);
+
+    std::cout << "******************* Finish Loop Mapping *******************" << std::endl;
 }
 
 
 void PointCloudMapping::setPointCloudMapUpdatedFlag(bool bFlag)
 {
-    unique_lock<mutex> lock(mMtxPointCloudUpdated);
+    unique_lock<mutex> lock1(mMtxPointCloudUpdated);
+    unique_lock<mutex> lock2(mMtxPlaneSegmentation);
     mbPointCloudMapUpdated = bFlag;
 }
 
 
-PointCloudMapping::PointCloud PointCloudMapping::GetPointCloudMap()
+bool PointCloudMapping::getPointCloudMapUpdatedFlag()
 {
     unique_lock<mutex> lock(mMtxPointCloudUpdated);
-    return *globalMap;
+    unique_lock<mutex> lock2(mMtxPlaneSegmentation);
+    return mbPointCloudMapUpdated;
+}
+
+
+bool PointCloudMapping::getGlobalCloud(PointCloud::Ptr &pCloud)
+{
+    unique_lock<mutex> lock(mMtxPointCloudUpdated);
+    if (mpPclGlobalMap->empty())
+        return false;
+    pCloud = mpPclGlobalMap->makeShared();
+    return true;
+}
+
+
+bool PointCloudMapping::getObstacleCloud(PointCloud::Ptr &pCloud)
+{
+    unique_lock<mutex> lock(mMtxPlaneSegmentation);
+    if (!mbUsePlaneSegmentation || mpPclObstacle->empty())
+        return false;
+    pCloud = mpPclObstacle->makeShared();
+    return true;
+}
+
+
+bool PointCloudMapping::getPlaneCloud(PointCloud::Ptr &pCloud)
+{
+    unique_lock<mutex> lock(mMtxPlaneSegmentation);
+    if (!mbUsePlaneSegmentation || mpPclGroundPlane->empty())
+        return false;
+    pCloud = mpPclGroundPlane->makeShared();
+    return true;
+}
+
+
+bool PointCloudMapping::getPlaneCoeffs(Eigen::Vector4d &planeCoeffs)
+{
+    unique_lock<mutex> lock(mMtxPlaneSegmentation);
+    if (!mbUsePlaneSegmentation)
+        return false;
+    planeCoeffs = mPlaneCoeffs;
+    return true;
+}
+
+
+void PointCloudMapping::updateTbc(const Eigen::Matrix3d &Rbc, const Eigen::Vector3d &tbc)
+{
+    unique_lock<mutex> lock(mMtxTbcUpdated);
+    mTbc = Eigen::Matrix4d::Identity();
+    mTbc.block(0,0,3,3) = Rbc;
+    mTbc.block(0,3,3,1) = tbc;
+    mfCameraHeight = tbc[2];
+}
+
+
+void PointCloudMapping::updateTbc(const Eigen::Matrix4d &Tbc)
+{
+    unique_lock<mutex> lock(mMtxTbcUpdated);
+    mTbc = Tbc;
+    mfCameraHeight = Tbc(3,3);
+}
+
+
+void PointCloudMapping::getTbc(Eigen::Matrix4d &Tbc)
+{
+    unique_lock<mutex> lock(mMtxTbcUpdated);
+    Tbc = mTbc;
+}
+
+
+void PointCloudMapping::getPlaneTransformMatrix(const Eigen::Vector4d &target_plane,
+                                                const Eigen::Vector4d &source_plane, Eigen::Matrix4d &T)
+{
+    if ((target_plane-source_plane).norm() < 1e-6)
+    {
+        T = Eigen::Matrix4d::Identity();
+        return;
+    }
+    Eigen::Vector3d norm_target = target_plane.segment(0, 3);
+    Eigen::Vector3d norm_source = source_plane.segment(0, 3);
+    double th_mo = acos (norm_source.dot(norm_target) / (norm_source.norm() *norm_target.norm()) + 1e-6 );  // [0, pi)
+    Eigen::Matrix3d Rmo;
+    if (fabs(th_mo) < 1e-3 || (norm_source - norm_target).norm() < 1e-6)
+    {
+        Rmo = Eigen::Matrix3d::Identity();
+    }
+    else
+    {
+        Eigen::Vector3d norm_mo = norm_source.cross(norm_target).normalized();  // get the norm vector from odom->map
+        Eigen::AngleAxisd r_mo(th_mo, norm_mo);
+        Rmo = r_mo.toRotationMatrix();
+    }
+    double tz = (source_plane[3]-target_plane[3]) / (target_plane[2] + 1e-6);
+    T = Eigen::Matrix4d::Identity();
+    T.block(0,0,3,3) = Rmo;
+    T(2,3) = tz;
+}
+
+
+void PointCloudMapping::setUsePlaneSegmentationFlag(bool bFlag)
+{
+    unique_lock<mutex> lock1(mMtxPointCloudUpdated);
+    unique_lock<mutex> lock2(mMtxPlaneSegmentation);
+    mbUsePlaneSegmentation = bFlag;
+}
+
+
+bool PointCloudMapping::getUsePlanSegmentationFlag()
+{
+    unique_lock<mutex> lock1(mMtxPointCloudUpdated);
+    unique_lock<mutex> lock2(mMtxPlaneSegmentation);
+    return mbUsePlaneSegmentation;
+}
+
+
+bool PointCloudMapping::planeSACSegmentation(PointCloud::Ptr &pPclMap, PointCloud::Ptr &pPclPlane,
+                                             Eigen::Vector4d &planeCoeffs, const Eigen::Vector4d &lastPlaneCoeffs,
+                                             pcl::PointIndices::Ptr &pInliers)
+{
+    // segment plane with RANSAC
+    pcl::ModelCoefficients::Ptr pcl_coeffs(new pcl::ModelCoefficients());
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+    pcl::SACSegmentation<PointCloudMapping::PointT> seg;
+
+    // perform segment
+    seg.setOptimizeCoefficients(true);
+    seg.setModelType (pcl::SACMODEL_PLANE);
+    seg.setMethodType (pcl::SAC_RANSAC);
+    seg.setDistanceThreshold (mfPlaneDistThres);  // 距离阈值
+    seg.setInputCloud(pPclMap);
+    seg.segment(*inliers, *pcl_coeffs);
+
+    // segment directly fail
+    if (inliers->indices.size() == 0)
+    {
+        cerr << "Plane segmentation fail!" << endl;  // notice 内点数为0时输出
+        return false;
+    }
+
+    planeCoeffs[0] = pcl_coeffs->values[0];
+    planeCoeffs[1] = pcl_coeffs->values[1];
+    planeCoeffs[2] = pcl_coeffs->values[2];
+    planeCoeffs[3] = pcl_coeffs->values[3];
+
+    // norm vector
+    Eigen::Vector3d norm_plane = planeCoeffs.segment(0, 3);
+    Eigen::Vector3d norm_last_plane = lastPlaneCoeffs.segment(0, 3);
+    planeCoeffs = planeCoeffs / norm_plane.norm();  // normalize sacle
+
+    // check angle between current estimated plane and last estimated plane
+    double angle_last = acos( norm_plane.dot(norm_last_plane) / (norm_plane.norm()*norm_last_plane.norm()) );
+    if (fabs(angle_last) > M_PI_2 )
+    {
+        // in pi=[n|d], always d>0, n determines whether oringial point is up or under the plane
+        // we should keep n in the same direction as last norm (always positive)
+        planeCoeffs = -planeCoeffs;
+        norm_plane = planeCoeffs.segment(0, 3);
+        angle_last = acos( norm_plane.dot(norm_last_plane) / (norm_plane.norm()*norm_last_plane.norm()) );
+    }
+    if ( fabs(angle_last) > M_PI/12 )
+    {
+        cerr << "Segment ground plane fail, "
+                "fail segment parameters: " << planeCoeffs.transpose()
+             << ", relative angle: " << angle_last << endl;
+        planeCoeffs = lastPlaneCoeffs;  // roll back...
+        return false;
+    }
+
+    // set indices
+    if (pInliers != nullptr)
+        pInliers = inliers;
+
+    // filter plane
+    PointCloudMapping::PointCloud::Ptr pcl_obstalce(new PointCloudMapping::PointCloud() );
+    pcl::ExtractIndices<PointCloudMapping::PointT> extract;
+    extract.setInputCloud(pPclMap);
+    extract.setIndices(inliers);
+    extract.filter(*pPclPlane);
+
+    // filter map
+    extract.setNegative(true);
+    extract.setInputCloud(pPclMap);
+    extract.setIndices(inliers);
+    extract.filter(*pcl_obstalce);
+
+    // output
+    pPclMap = pcl_obstalce;
+    cout << "Segment ground plane succeed, "
+            "successful segment parameters: " << planeCoeffs.transpose()
+         << ", relative angle: " << angle_last << endl;
+    return true;
+}
+
+
+bool PointCloudMapping::framePlaneSegmentation(PointCloud::Ptr &pPclFrame, PointCloud::Ptr &pPclPlane)
+{
+    // pass through-->sac segmentation-->indices filter
+    // pass through filter with y axis
+    PointCloud::Ptr pFramePassFilter(new PointCloud());
+    vector<int> vFramePassIdxs;
+    pcl::PassThrough<PointT> pass;
+    pass.setInputCloud(pPclFrame);
+    pass.setFilterFieldName("z");
+    pass.setFilterLimits(-mfFramePlaneDistThres, +mfFramePlaneDistThres);
+    pass.filter(*pFramePassFilter);
+    pass.filter(vFramePassIdxs);
+
+    // mViewer.showCloud(pFramePassFilter);
+
+    if (vFramePassIdxs.empty())
+    {
+        cerr << "No valid point in pass through filter range!" << endl;
+        return false;
+    }
+
+    // perform plane segmentation
+    Eigen::Vector4d planeCoeffs;
+    Eigen::Vector4d lastPlaneCoeffs(0, 0, 1, 0);  // z axis norm vector
+    pcl::PointIndices::Ptr pInliers(new pcl::PointIndices());
+    bool bPlaneSegmentation = planeSACSegmentation(pFramePassFilter, pPclPlane, planeCoeffs, lastPlaneCoeffs, pInliers);
+    if (!bPlaneSegmentation)
+        return false;
+
+    // remove plane from original point cloud
+    pcl::PointIndices::Ptr pFrameInliers(new pcl::PointIndices());
+    for (int i=0; i<pInliers->indices.size(); i++)
+    {
+        pFrameInliers->indices.push_back(vFramePassIdxs[pInliers->indices[i]]);
+    }
+    PointCloud::Ptr pFramePlaneFilter(new PointCloud());
+    pcl::ExtractIndices<PointT> extractor;
+    extractor.setIndices(pFrameInliers);
+    extractor.setInputCloud(pPclFrame);
+    extractor.setNegative(true);
+    extractor.filter(*pFramePlaneFilter);
+
+    // output
+    pPclFrame = pFramePlaneFilter;
+//    mViewer.showCloud(pPclFrame);
+    return true;
 }

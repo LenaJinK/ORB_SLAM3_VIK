@@ -36,9 +36,23 @@ if(NOT DEFINED CMAKE_SUPPRESS_DEVELOPER_WARNINGS)
 endif()
 
 
-find_package(OpenCV 4 REQUIRED)
-MESSAGE("OPENCV VERSION:")
-MESSAGE(${OpenCV_VERSION})
+find_package(OpenCV REQUIRED)
+if(NOT OpenCV_FOUND)
+    find_package(OpenCV 2.4.3 QUIET)
+    if(NOT OpenCV_FOUND)
+        message(FATAL_ERROR "OpenCV > 2.4.3 not found.")
+    endif()
+endif()
+# If the package has been found, several variables will
+# be set, you can find the full list with descriptions
+# in the OpenCVConfig.cmake file.
+# Print some message showing some of them
+message(STATUS "OpenCV library status:")
+message(STATUS "    config: ${OpenCV_DIR}")
+message(STATUS "    version: ${OpenCV_VERSION}")
+message(STATUS "    libraries: ${OpenCV_LIBS}")
+message(STATUS "    include path: ${OpenCV_INCLUDE_DIRS}")
+
 
 find_package(Eigen3 REQUIRED)
 find_package(Pangolin REQUIRED)
@@ -56,8 +70,12 @@ else()
 endif()
 
 find_package( PCL  REQUIRED )  # todo new
-MESSAGE("PCL VERSION:")
-MESSAGE(${PCL_VERSION})
+message(STATUS "PCL library status:")
+message(STATUS "    config: ${PCL_DIR}")
+message(STATUS "    version: ${PCL_VERSION}")
+message(STATUS "    libraries: ${PCL_LIBS}")
+message(STATUS "    include path: ${PCL_INCLUDE_DIRS}")
+
 
 include_directories(
 ${PROJECT_SOURCE_DIR}
@@ -144,7 +162,6 @@ include/Settings.h
         include/PointCloude.h
         src/pointcloudmapping.cpp
         include/pointcloudmapping.h
-        src/PointCloude.cpp
 )
 
 add_subdirectory(Thirdparty/g2o)
@@ -161,7 +178,8 @@ ${THIRD_PARTY_LIBS} fmt::fmt
 ${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
 ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
         -lboost_system
-        #-lcrypto
+        -lboost_serialization
+        -lcrypto
 )
 
 # If RealSense SDK is found the library is added and its examples compiled

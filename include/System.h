@@ -20,7 +20,7 @@
 #ifndef SYSTEM_H
 #define SYSTEM_H
 
-#define URDF_PATH "/home/lenajin/workspace/fk_ros/src/gtx3_description/urdf/gtx3_description.urdf"
+#define URDF_PATH "/home/lenajin/Documents/ORB_SLAM3_VIK/gtx3_description.urdf"
 
 
 #include <unistd.h>
@@ -288,9 +288,9 @@ private:
 
     Settings* settings_;
 
-public:  // todo new
+public:
     // System所有的线程和drawer都是private的,
-    // 方便ROS接口发布消息, 需要提供访问的接口
+    // todo new 方便ROS接口发布消息, 需要提供访问的接口
     inline Tracking *GetTracker() { return mpTracker; }  /// Get Tracker
     inline FrameDrawer *GetFrameDrawer() { return mpFrameDrawer; }  /// Get FrameDrawer
     inline MapDrawer *GetMapDrawer() {return mpMapDrawer; }  /// Get MapDrawer

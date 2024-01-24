@@ -617,13 +617,14 @@ Eigen::Matrix<float,3,3> Frame::GetImuRotation() {
     return mRwc * mImuCalib.mTcb.rotationMatrix();
 }
 
-// todo Joint com pose
+// todo Joint com pose twcom
 Eigen::Matrix<float,3,1> Frame::GetCoMPosition() const{
     return  mRwc * mJointCalib.mTccom.translation() + mOw;
 }
 Eigen::Matrix<float,3,3> Frame::GetCoMRotation(){
     return mRwc * mJointCalib.mTccom.rotationMatrix();
 }
+// todo mTwcom
 Sophus::SE3<float> Frame::GetCoMPose(){
     return mTcw.inverse() * mJointCalib.mTccom;
 }

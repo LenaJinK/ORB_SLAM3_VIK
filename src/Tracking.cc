@@ -18,7 +18,6 @@
 
 
 #include "Tracking.h"
-
 #include "ORBmatcher.h"
 #include "FrameDrawer.h"
 #include "Converter.h"
@@ -29,9 +28,7 @@
 #include "MLPnPsolver.h"
 #include "GeometricTools.h"
 
-
 #include <iostream>
-
 #include <mutex>
 #include <chrono>
 
@@ -43,11 +40,11 @@ namespace ORB_SLAM3
 
 
 Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Atlas *pAtlas,
-//                   shared_ptr<PointCloudMapping> pPointCloud,
+                   shared_ptr<PointCloudMapping> pPointCloud, // todo new
                    KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor, Settings* settings, const string &_nameSeq):
     mState(NO_IMAGES_YET), mSensor(sensor), mTrackedFr(0), mbStep(false),
     mbOnlyTracking(false), mbMapUpdated(false), mbVO(false), mpORBVocabulary(pVoc),
-//    mpPointCloudMapping( pPointCloud ),   // todo new
+    mpPointCloudMapping( pPointCloud ),   // todo new
     mpKeyFrameDB(pKFDB),
     mbReadyToInitializate(false), mpSystem(pSys), mpViewer(NULL), bStepByStep(false),
     mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpAtlas(pAtlas), mnLastRelocFrameId(0), time_recently_lost(5.0),
@@ -626,7 +623,7 @@ void Tracking::newParameterLoader(Settings *settings) {
 
     mpImuPreintegratedFromLastKF = new IMU::Preintegrated(IMU::Bias(),*mpImuCalib);
 
-    mpJointCalculatedFromLastKF = new Joint::ForwardKinematics("/home/lenajin/workspace/fk_ros/src/gtx3_description/urdf/gtx3_description.urdf");
+    mpJointCalculatedFromLastKF = new Joint::ForwardKinematics("/home/lenajin/Documents/ORB_SLAM3_VIK/gtx3_description.urdf");
 }
 
 bool Tracking::ParseCamParamFile(cv::FileStorage &fSettings)   //notice 跟yaml文件对应的参数读取
@@ -1439,7 +1436,7 @@ bool Tracking::ParseIMUParamFile(cv::FileStorage &fSettings) {
     mpJointCalib = new Joint::Calib(Tcomc);
 
     //notice 初始化关节数据变化量
-    mpJointCalculatedFromLastKF = new Joint::ForwardKinematics("/home/lenajin/gtx3_description.urdf");
+    mpJointCalculatedFromLastKF = new Joint::ForwardKinematics("/home/lenajin/Documents/ORB_SLAM3_VIK/gtx3_description.urdf");
 
 
     return true;
@@ -1566,13 +1563,8 @@ Sophus::SE3f Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, co
     // 将深度图转换为 CV_32F类型,将深度相机的disparity转为Depth , 也就是转换成为真正尺度下的深度
     if((fabs(mDepthMapFactor-1.0f)>1e-5) || mImDepth.type()!=CV_32F)  // CV_32F,4字节float类型
         mImDepth.convertTo(mImDepth,CV_32F,mDepthMapFactor);
-    // 构造普通帧
-   /* if (mSensor == System::RGBD){
-        mCurrentFrame = Frame(mImGray,imDepth,timestamp,mpORBextractorLeft,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera);}
-    else if(mSensor == System::IMU_RGBD)
-        mCurrentFrame = Frame(mImGray,imDepth,timestamp,mpORBextractorLeft,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,&mLastFrame,*mpImuCalib);
-    else */
-   if(mSensor == System::IMU_RGBD_KINEMATIC) // notice
+    // notice 构造普通帧
+   if(mSensor == System::IMU_RGBD_KINEMATIC)
         mCurrentFrame = Frame(mImGray,mImDepth,timestamp,mpORBextractorLeft,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,&mLastFrame,*mpImuCalib,*mpJointCalib);
 
     mCurrentFrame.mNameFile = filename;
@@ -1919,7 +1911,7 @@ void Tracking::CalculateJoint(){
         return;
     }
 //    cout << "=================================创建对象==============================\n";
-    Joint::ForwardKinematics* pJointCalculatedFromLastFrame = new Joint::ForwardKinematics("/home/lenajin/workspace/fk_ros/src/gtx3_description/urdf/gtx3_description.urdf");
+    Joint::ForwardKinematics* pJointCalculatedFromLastFrame = new Joint::ForwardKinematics("/home/lenajin/Documents/ORB_SLAM3_VIK/gtx3_description.urdf");
 
     for (int i = 0; i < n; ++i) {
 //        cout << " 处理第 " << i << "个数据==="<<endl;
@@ -1960,7 +1952,7 @@ void Tracking::CalculateJoint(){
 //        cout << left << right << endl;
         if (!mpJointCalculatedFromLastKF){
 //            cout << "mpJointCalculatedFromLastKF does not exist" << endl;
-            mpJointCalculatedFromLastKF = new Joint::ForwardKinematics("/home/lenajin/workspace/fk_ros/src/gtx3_description/urdf/gtx3_description.urdf");
+            mpJointCalculatedFromLastKF = new Joint::ForwardKinematics("/home/lenajin/Documents/ORB_SLAM3_VIK/gtx3_description.urdf");
 //            cout << "new mpJointCalculatedFromLastKF "<<endl;
         }
 //        cout << "输入的timestamp" << timestamp<<endl;
@@ -2992,7 +2984,7 @@ void Tracking::CreateMapInAtlas()
     if((mSensor == System::IMU_RGBD_KINEMATIC) && mpJointCalculatedFromLastKF)   // notice 初始化运动学
     {
         delete mpJointCalculatedFromLastKF;
-        mpJointCalculatedFromLastKF = new Joint::ForwardKinematics("/home/lenajin/workspace/fk_ros/src/gtx3_description/urdf/gtx3_description.urdf");
+        mpJointCalculatedFromLastKF = new Joint::ForwardKinematics("/home/lenajin/Documents/ORB_SLAM3_VIK/gtx3_description.urdf");
     }
 
     if(mpLastKeyFrame)
@@ -3734,7 +3726,7 @@ void Tracking::CreateNewKeyFrame()
         mpImuPreintegratedFromLastKF = new IMU::Preintegrated(pKF->GetImuBias(),pKF->mImuCalib);
     }
     if(mSensor == System::IMU_RGBD_KINEMATIC){  // todo new
-        mpJointCalculatedFromLastKF = new Joint::ForwardKinematics("/home/lenajin/workspace/fk_ros/src/gtx3_description/urdf/gtx3_description.urdf");
+        mpJointCalculatedFromLastKF = new Joint::ForwardKinematics("/home/lenajin/Documents/ORB_SLAM3_VIK/gtx3_description.urdf");
     }
 
     // 这段代码和 Tracking::UpdateLastFrame 中的那一部分代码功能相同
@@ -3841,9 +3833,11 @@ void Tracking::CreateNewKeyFrame()
     // 插入好了，允许局部建图停止
     mpLocalMapper->SetNotStop(false);
 
+    // todo new insert Key Frame into point cloud viewer
     vector<KeyFrame*> vpKFs = mpAtlas->GetAllKeyFrames();
     cout<<"Track: CreateNewKeyFrame -- mpAtlasGetAllKeyFrame"<<endl;
-//    mpPointCloudMapping->insertKeyFrame( pKF, this->mImRGB, this->mImDepth  ,idk,vpKFs);  // todo new insert Key Frame into point cloud viewer 先注释掉
+    mpPointCloudMapping->insertKeyFrame( pKF, this->mImRGB, this->mImDepth  ,idk,vpKFs);
+    cout<<"insert KeyFrame to mpPointCloudMapping--------------------------------------------------done!"<<endl;
 
     // 当前帧成为新的关键帧，更新
     mnLastKeyFrameId = mCurrentFrame.mnId;

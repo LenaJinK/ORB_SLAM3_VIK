@@ -2512,9 +2512,8 @@ void LoopClosing::RunGlobalBundleAdjustment(Map* pActiveMap, unsigned long nLoop
             // todo  new 稠密建图
             loopcount++;
             while(loopcount!=mpPointCloudMapping->loopcount)
-                mpPointCloudMapping->updatecloud();
+                mpPointCloudMapping->updateCloseLoopCloud();    // 更新地图
             cout<<"mpPointCloudMapping->loopcount="<<mpPointCloudMapping->loopcount<<endl;
-//            Verbose::PrintMess("Map updated!", Verbose::VERBOSITY_NORMAL);
             cout << "Map updated!" << endl;
         }
 

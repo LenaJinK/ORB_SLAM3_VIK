@@ -82,7 +82,6 @@ class PointCloude
     typedef pcl::PointXYZRGBA PointT;
     typedef pcl::PointCloud<PointT> PointCloud;
 public:
-    PointCloude();
     PointCloud::Ptr pcE;
 public:
     Eigen::Isometry3d T;
